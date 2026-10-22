@@ -14,11 +14,15 @@ let pgliteInstance: PGlite | null = null;
 let isInitialized = false;
 
 function getPgDataDir(): string {
-  const baseDir = path.resolve(process.cwd(), 'data', 'pgdata');
-  if (!fs.existsSync(baseDir)) {
-    fs.mkdirSync(baseDir, { recursive: true });
+  try {
+    const baseDir = path.resolve(process.cwd(), 'data', 'pgdata');
+    if (typeof fs !== 'undefined' && fs.existsSync && !fs.existsSync(baseDir)) {
+      fs.mkdirSync(baseDir, { recursive: true });
+    }
+    return baseDir;
+  } catch {
+    return '/tmp/pgdata';
   }
-  return baseDir;
 }
 
 function createPgPool(databaseUrl: string): Pool {
@@ -36,12 +40,19 @@ function createPgPool(databaseUrl: string): Pool {
   });
 }
 
+const DEFAULT_SUPABASE_URL =
+  'postgresql://postgres.lftpaujmbpfbawdwmfxh:Yassin1980%24bassem@aws-0-eu-west-1.pooler.supabase.com:6543/postgres';
+
+export function getDatabaseUrl(): string {
+  return process.env.DATABASE_URL || DEFAULT_SUPABASE_URL;
+}
+
 export async function getDb(): Promise<{
   isPostgres: boolean;
   client: DbClient;
   poolClient?: PoolClient;
 }> {
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = getDatabaseUrl();
 
   if (databaseUrl && databaseUrl.startsWith('postgres')) {
     if (!pgPool) {
@@ -114,7 +125,7 @@ export async function execute(sql: string, params?: any[]): Promise<number> {
 
 export async function transaction<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
   await ensureInitialized();
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = getDatabaseUrl();
 
   if (databaseUrl && databaseUrl.startsWith('postgres')) {
     if (!pgPool) {
@@ -176,15 +187,20 @@ export async function transaction<T>(fn: (client: DbClient) => Promise<T>): Prom
 export async function ensureInitialized() {
   if (isInitialized) return;
 
-  const schemaPath = path.resolve(process.cwd(), 'src', 'lib', 'db', 'schema.sql');
-  const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-
   const { isPostgres, client } = await getDb();
-  
-  if (isPostgres && pgPool) {
-    await pgPool.query(schemaSql);
-  } else if (pgliteInstance) {
-    await pgliteInstance.exec(schemaSql);
+
+  if (!isPostgres) {
+    try {
+      const schemaPath = path.resolve(process.cwd(), 'src', 'lib', 'db', 'schema.sql');
+      if (typeof fs !== 'undefined' && fs.existsSync && fs.existsSync(schemaPath)) {
+        const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+        if (pgliteInstance) {
+          await pgliteInstance.exec(schemaSql);
+        }
+      }
+    } catch (e) {
+      console.warn('Schema file skipped:', e);
+    }
   }
 
   // Seed default warehouse location

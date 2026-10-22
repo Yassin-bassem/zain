@@ -9,5 +9,11 @@
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
+  },
+  "vars": {
+    "DATABASE_URL": "postgresql://postgres.lftpaujmbpfbawdwmfxh:Yassin1980%24bassem@aws-0-eu-west-1.pooler.supabase.com:6543/postgres",
+    "JWT_SECRET": "super_secret_jwt_key_zain_wholesale_children_clothing_2026_egypt",
+    "NEXT_PUBLIC_SUPABASE_URL": "https://lftpaujmbpfbawdwmfxh.supabase.co",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmdHBhdWptYnBmYmF3ZHdtZnhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI3MDM2NTYsImV4cCI6MjEwODI3OTY1Nn0.mPiSL6nTdXmCy4rNjgtpsR3vfBZrH4OosUV8oobB7Tw"
   }
 }
