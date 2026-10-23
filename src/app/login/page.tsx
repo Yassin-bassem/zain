@@ -53,15 +53,15 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col justify-center items-center p-4 selection:bg-indigo-500 selection:text-white">
-      <div className="w-full max-w-md bg-slate-950/80 border border-slate-800 rounded-2xl shadow-2xl p-8 backdrop-blur-md">
+    <div className="min-h-screen bg-slate-900 flex flex-col justify-center items-center p-3.5 sm:p-4 selection:bg-indigo-500 selection:text-white">
+      <div className="w-full max-w-md bg-slate-950/80 border border-slate-800 rounded-2xl shadow-2xl p-5 sm:p-8 backdrop-blur-md my-auto">
         {/* Brand Header */}
-        <div className="text-center mb-8">
-          <div className="w-14 h-14 bg-indigo-600 rounded-2xl mx-auto flex items-center justify-center text-white text-2xl font-black shadow-lg shadow-indigo-600/40 mb-3">
+        <div className="text-center mb-6 sm:mb-8">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 bg-indigo-600 rounded-2xl mx-auto flex items-center justify-center text-white text-xl sm:text-2xl font-black shadow-lg shadow-indigo-600/40 mb-3">
             ز
           </div>
-          <h1 className="text-2xl font-black text-white tracking-wide">منظومة زين لإدارة المخزون</h1>
-          <p className="text-sm text-slate-400 mt-1">جملة مشكل ملابس أطفال • جمهورية مصر العربية</p>
+          <h1 className="text-xl sm:text-2xl font-black text-white tracking-wide">منظومة زين لإدارة المخزون</h1>
+          <p className="text-xs sm:text-sm text-slate-400 mt-1">جملة مشكل ملابس أطفال • جمهورية مصر العربية</p>
         </div>
 
         {isSetupRequired && (

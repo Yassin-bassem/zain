@@ -64,38 +64,38 @@ export default function DashboardPage() {
           <p className="text-sm font-bold text-slate-600">جارٍ قراءة بيانات المخزون المحدثة لحظياً...</p>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Quick Welcome Banner */}
-          <div className="bg-gradient-to-l from-slate-900 to-indigo-950 rounded-2xl p-6 text-white shadow-md relative overflow-hidden flex flex-wrap items-center justify-between gap-4">
+          <div className="bg-gradient-to-l from-slate-900 to-indigo-950 rounded-2xl p-4 sm:p-6 text-white shadow-md relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="relative z-10 space-y-1">
-              <span className="inline-block px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 text-xs font-bold border border-indigo-400/30">
+              <span className="inline-block px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 text-[11px] font-bold border border-indigo-400/30">
                 منظومة الجملة الموحدة
               </span>
-              <h2 className="text-2xl font-black">مستودع ملابس الأطفال المركزي</h2>
-              <p className="text-slate-300 text-sm max-w-xl">
+              <h2 className="text-xl sm:text-2xl font-black">مستودع ملابس الأطفال المركزي</h2>
+              <p className="text-slate-300 text-xs sm:text-sm max-w-xl">
                 إدارة الطلبات المشكلة بدقة متناهية، حجز المخزون آلياً ومنع البيع على المكشوف، وتسجيل كافة الحركات بملف تدقيق غير قابل للتعديل.
               </p>
             </div>
-            <div className="relative z-10 flex items-center gap-3">
+            <div className="relative z-10 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full md:w-auto">
               <Link
                 href="/orders/new"
-                className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold shadow-md transition-colors"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md transition-colors"
               >
-                <PlusCircle className="w-4 h-4" />
+                <PlusCircle className="w-4 h-4 shrink-0" />
                 <span>إدخال طلب جملة جديد</span>
               </Link>
               <Link
                 href="/import"
-                className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-bold transition-colors border border-white/15"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs sm:text-sm font-bold transition-colors border border-white/15"
               >
-                <FileSpreadsheet className="w-4 h-4" />
+                <FileSpreadsheet className="w-4 h-4 shrink-0" />
                 <span>استيراد ملف شيت</span>
               </Link>
             </div>
           </div>
 
           {/* Core Inventory Pieces Cards (Physical, Reserved, Available) */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
             {/* 1. Physical On-Hand Stock */}
             <Link
               href="/inventory"
@@ -217,22 +217,22 @@ export default function DashboardPage() {
           </div>
 
           {/* Wholesale Orders Pipeline Workflow Status */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-            <div className="flex items-center justify-between mb-4">
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-xs">
+            <div className="flex flex-col xs:flex-row xs:items-center justify-between gap-2 mb-4">
               <div>
-                <h3 className="text-base font-black text-slate-900">مسار تنفيذ طلبات الجملة المشكل</h3>
-                <p className="text-xs text-slate-500">حالات تدفق الطلبات من الإنشاء حتى التسليم والشحن النهائي</p>
+                <h3 className="text-sm sm:text-base font-black text-slate-900">مسار تنفيذ طلبات الجملة المشكل</h3>
+                <p className="text-[11px] sm:text-xs text-slate-500">حالات تدفق الطلبات من الإنشاء حتى التسليم والشحن النهائي</p>
               </div>
               <Link
                 href="/orders"
-                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 self-start xs:self-auto"
               >
                 <span>عرض قائمة الطلبات</span>
                 <ArrowUpRight className="w-3.5 h-3.5" />
               </Link>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               <Link
                 href="/orders?status=draft"
                 className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 hover:bg-slate-100 transition-colors"
@@ -284,14 +284,14 @@ export default function DashboardPage() {
           </div>
 
           {/* Two-Column: Recent Stock Movements & Recent Goods Receipts */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
             {/* 1. Recent Immutable Stock Movements */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-xs flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex flex-col xs:flex-row xs:items-center justify-between gap-2 mb-4">
                   <div>
-                    <h3 className="text-base font-black text-slate-900">سجل أحدث الحركات المخزنية</h3>
-                    <p className="text-xs text-slate-500">سجل غير قابل للتعديل يوثق كل إضافة أو خصم أو تسوية</p>
+                    <h3 className="text-sm sm:text-base font-black text-slate-900">سجل أحدث الحركات المخزنية</h3>
+                    <p className="text-[11px] sm:text-xs text-slate-500">سجل غير قابل للتعديل يوثق كل إضافة أو خصم أو تسوية</p>
                   </div>
                   <Link
                     href="/inventory/movements"
@@ -354,16 +354,16 @@ export default function DashboardPage() {
             </div>
 
             {/* 2. Recent Supplier Receipts */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-xs flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex flex-col xs:flex-row xs:items-center justify-between gap-2 mb-4">
                   <div>
-                    <h3 className="text-base font-black text-slate-900">أحدث أذونات استلام البضاعة</h3>
-                    <p className="text-xs text-slate-500">التوريدات الواردة من المصانع وورش تصنيع ملابس الأطفال</p>
+                    <h3 className="text-sm sm:text-base font-black text-slate-900">أحدث أذونات استلام البضاعة</h3>
+                    <p className="text-[11px] sm:text-xs text-slate-500">التوريدات الواردة من المصانع وورش تصنيع ملابس الأطفال</p>
                   </div>
                   <Link
                     href="/warehouse/receipts"
-                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 self-start xs:self-auto"
                   >
                     <span>كافة التوريدات</span>
                     <ArrowUpRight className="w-3.5 h-3.5" />

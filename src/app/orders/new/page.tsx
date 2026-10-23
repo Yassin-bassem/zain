@@ -469,13 +469,13 @@ export default function NewOrderPage() {
           )}
 
           {/* Order Summary & Financials */}
-          <div className="p-6 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-6">
-            <div className="space-y-1 text-xs text-slate-500">
+          <div className="p-4 sm:p-6 bg-slate-50 border-t border-slate-200 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 sm:gap-6">
+            <div className="space-y-1 text-[11px] sm:text-xs text-slate-500">
               <p>• تأكيد الطلب يحجز الكميات المطلوبة آلياً ويمنع بيعها لعميل آخر.</p>
               <p>• لا يتم خصم المخزون الفعلي إلا عند خطوة الشحن والتسليم النهائي للمستودع.</p>
             </div>
 
-            <div className="w-72 space-y-2 text-xs">
+            <div className="w-full md:w-72 space-y-2 text-xs">
               <div className="flex justify-between text-slate-600">
                 <span>المجموع الفرعي:</span>
                 <span className="font-bold text-slate-900">{subtotal.toLocaleString('ar-EG')} ج.م</span>
@@ -492,18 +492,18 @@ export default function NewOrderPage() {
               </div>
               <div className="flex justify-between text-sm font-black text-slate-900 pt-2 border-t border-slate-200">
                 <span>الإجمالي النهائي للطلب:</span>
-                <span className="text-indigo-700">{totalAmount.toLocaleString('ar-EG')} ج.م</span>
+                <span className="text-indigo-700 text-base">{totalAmount.toLocaleString('ar-EG')} ج.م</span>
               </div>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-end gap-3">
+          <div className="p-4 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2.5 sm:gap-3">
             <button
               type="button"
               onClick={() => handleSaveOrder(false)}
               disabled={submitting}
-              className="px-5 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors cursor-pointer disabled:opacity-50"
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors cursor-pointer disabled:opacity-50 text-center"
             >
               حفظ كمسودة فقط
             </button>
@@ -512,7 +512,7 @@ export default function NewOrderPage() {
               type="button"
               onClick={() => handleSaveOrder(true)}
               disabled={submitting}
-              className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
+              className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
             >
               {submitting ? (
                 <>

@@ -17,6 +17,7 @@ export function AppShell({ children, title, subtitle }: AppShellProps) {
   const pathname = usePathname();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const fetchUser = async () => {
     try {
@@ -45,11 +46,12 @@ export function AppShell({ children, title, subtitle }: AppShellProps) {
 
   useEffect(() => {
     fetchUser();
+    setMobileMenuOpen(false);
   }, [pathname]);
 
   if (loading) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-slate-100 gap-3">
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-slate-100 gap-3 p-4">
         <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
         <p className="text-sm font-bold text-slate-300">جارٍ التحميل والتأكد من الجلسة...</p>
       </div>
@@ -58,11 +60,23 @@ export function AppShell({ children, title, subtitle }: AppShellProps) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100">
-      <Sidebar user={user} />
+      {/* Responsive Sidebar (docked on desktop, drawer on mobile) */}
+      <Sidebar
+        user={user}
+        isOpenMobile={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
+      />
+
+      {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <Header title={title} subtitle={subtitle} onRefresh={fetchUser} />
-        <main className="flex-1 overflow-y-auto p-6 lg:p-8">
-          <div className="max-w-7xl mx-auto space-y-6">{children}</div>
+        <Header
+          title={title}
+          subtitle={subtitle}
+          onRefresh={fetchUser}
+          onOpenMobileMenu={() => setMobileMenuOpen(true)}
+        />
+        <main className="flex-1 overflow-y-auto p-3.5 sm:p-6 lg:p-8">
+          <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">{children}</div>
         </main>
       </div>
     </div>

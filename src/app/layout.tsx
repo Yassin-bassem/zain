@@ -1,9 +1,16 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
   title: 'زين | نظام إدارة مخزون وطلبات جملة ملابس الأطفال',
   description: 'منظومة إدارة المخزون والموديلات وطلبات الجملة المشكل لملابس الأطفال - جمهورية مصر العربية',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: '#0f172a',
 };
 
 export default function RootLayout({
