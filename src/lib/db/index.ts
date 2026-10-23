@@ -1,7 +1,4 @@
-import { PGlite } from '@electric-sql/pglite';
 import { Pool, PoolClient } from 'pg';
-import fs from 'fs';
-import path from 'path';
 
 export interface DbClient {
   query<T = any>(sql: string, params?: any[]): Promise<T[]>;
@@ -10,13 +7,15 @@ export interface DbClient {
 }
 
 let pgPool: Pool | null = null;
-let pgliteInstance: PGlite | null = null;
+let pgliteInstance: any = null;
 let isInitialized = false;
 
 function getPgDataDir(): string {
   try {
+    const path = require('path');
+    const fs = require('fs');
     const baseDir = path.resolve(process.cwd(), 'data', 'pgdata');
-    if (typeof fs !== 'undefined' && fs.existsSync && !fs.existsSync(baseDir)) {
+    if (!fs.existsSync(baseDir)) {
       fs.mkdirSync(baseDir, { recursive: true });
     }
     return baseDir;
@@ -43,7 +42,10 @@ function createPgPool(databaseUrl: string): Pool {
 const DEFAULT_SUPABASE_URL =
   'postgresql://postgres.lftpaujmbpfbawdwmfxh:Yassin1980%24bassem@aws-0-eu-west-1.pooler.supabase.com:6543/postgres';
 
-export function getDatabaseUrl(): string {
+export function getDatabaseUrl(): string | undefined {
+  if (process.env.NODE_ENV === 'test' && !process.env.TEST_SUPABASE) {
+    return process.env.DATABASE_URL;
+  }
   return process.env.DATABASE_URL || DEFAULT_SUPABASE_URL;
 }
 
@@ -79,6 +81,7 @@ export async function getDb(): Promise<{
 
   // Use embedded PGlite (Real PostgreSQL in Node.js)
   if (!pgliteInstance) {
+    const { PGlite } = await import('@electric-sql/pglite');
     if (process.env.NODE_ENV === 'test' && !process.env.PERSIST_TEST_DB) {
       pgliteInstance = new PGlite();
     } else {
@@ -191,8 +194,10 @@ export async function ensureInitialized() {
 
   if (!isPostgres) {
     try {
+      const path = require('path');
+      const fs = require('fs');
       const schemaPath = path.resolve(process.cwd(), 'src', 'lib', 'db', 'schema.sql');
-      if (typeof fs !== 'undefined' && fs.existsSync && fs.existsSync(schemaPath)) {
+      if (fs.existsSync(schemaPath)) {
         const schemaSql = fs.readFileSync(schemaPath, 'utf8');
         if (pgliteInstance) {
           await pgliteInstance.exec(schemaSql);
