@@ -32,9 +32,10 @@ function createPgPool(databaseUrl: string): Pool {
 
   return new Pool({
     connectionString: databaseUrl,
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
+    max: 5,
+    maxUses: 1,
+    idleTimeoutMillis: 5000,
+    connectionTimeoutMillis: 8000,
     ssl: isSupabaseOrSsl ? { rejectUnauthorized: false } : undefined,
   });
 }
