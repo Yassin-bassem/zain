@@ -4,11 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "opennextjs-cloudflare build",
+    "build:next": "next build",
     "build:cloudflare": "opennextjs-cloudflare build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "postinstall": "node -e \"const fs=require('fs'); try { fs.writeFileSync('node_modules/pg-cloudflare/dist/empty.js', 'module.exports = require(\\'./index.js\\');\\n'); } catch(e){}\""
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.11",
