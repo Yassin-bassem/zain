@@ -151,13 +151,14 @@ export async function createBulkVariants(data: {
           continue;
         }
 
-        // Generate stable SKU
+        // Generate stable SKU and unique QR identifier
         const sku = `${product.model_code}-C${colorId}-S${sizeId}`;
+        const qrUid = `VAR-${sku}-${Date.now().toString(36).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
 
         await tx.execute(
-          `INSERT INTO product_variants (product_id, color_id, size_id, sku, min_stock_threshold, active)
-           VALUES ($1, $2, $3, $4, $5, true)`,
-          [data.productId, colorId, sizeId, sku, data.minStockThreshold || 0]
+          `INSERT INTO product_variants (product_id, color_id, size_id, sku, qr_code_uid, min_stock_threshold, active)
+           VALUES ($1, $2, $3, $4, $5, $6, true)`,
+          [data.productId, colorId, sizeId, sku, qrUid, data.minStockThreshold || 0]
         );
 
         createdCount++;

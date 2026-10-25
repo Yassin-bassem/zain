@@ -389,7 +389,11 @@ export async function packOrder(userId: number, orderId: number) {
   });
 }
 
-export async function shipOrder(userId: number, orderId: number) {
+export async function shipOrder(
+  userId: number,
+  orderId: number,
+  partialItems?: Array<{ variant_id: number; quantity: number }>
+) {
   return await transaction(async (tx) => {
     // Lock order
     const order = await tx.queryOne<{
@@ -442,8 +446,25 @@ export async function shipOrder(userId: number, orderId: number) {
       throw new Error('لا توجد حجوزات مخزنية نشطة لهذا الطلب لتسليمها.');
     }
 
+    const partialMap = partialItems
+      ? new Map<number, number>(partialItems.map((i) => [i.variant_id, i.quantity]))
+      : null;
+
     // Deduct physical stock and fulfill reservations
     for (const res of reservations) {
+      let shipQty = res.quantity;
+      if (partialMap) {
+        const requestedQty = partialMap.get(res.variant_id);
+        if (requestedQty === undefined) {
+          continue; // not shipping this item in this batch
+        }
+        shipQty = Math.min(res.quantity, Math.max(0, requestedQty));
+      }
+
+      if (shipQty <= 0) {
+        continue;
+      }
+
       const balance = await tx.queryOne<{
         id: number;
         on_hand_quantity: number;
@@ -456,29 +477,38 @@ export async function shipOrder(userId: number, orderId: number) {
         [res.variant_id, res.location_id]
       );
 
-      if (!balance || Number(balance.on_hand_quantity) < res.quantity) {
+      if (!balance || Number(balance.on_hand_quantity) < shipQty) {
         throw new Error(
           `رصيد المخزن الفعلي للصنف [${res.model_code} - ${res.model_name}] غير كافٍ لإتمام عملية الشحن.`
         );
       }
 
-      // Deduct on_hand and release reserved
+      // Deduct on_hand and release reserved by shipQty
       await tx.execute(
         `UPDATE inventory_balances
          SET on_hand_quantity = on_hand_quantity - $1,
              reserved_quantity = GREATEST(0, reserved_quantity - $1),
              updated_at = CURRENT_TIMESTAMP
          WHERE id = $2`,
-        [res.quantity, balance.id]
+        [shipQty, balance.id]
       );
 
-      // Mark reservation fulfilled
-      await tx.execute(
-        `UPDATE stock_reservations
-         SET status = 'fulfilled'
-         WHERE id = $1`,
-        [res.id]
-      );
+      // If fully shipped reservation -> status = fulfilled, else reduce quantity
+      if (shipQty >= res.quantity) {
+        await tx.execute(
+          `UPDATE stock_reservations
+           SET status = 'fulfilled'
+           WHERE id = $1`,
+          [res.id]
+        );
+      } else {
+        await tx.execute(
+          `UPDATE stock_reservations
+           SET quantity = quantity - $1
+           WHERE id = $2`,
+          [shipQty, res.id]
+        );
+      }
 
       // Record immutable stock movement (negative delta)
       await tx.execute(
@@ -489,7 +519,7 @@ export async function shipOrder(userId: number, orderId: number) {
         [
           res.variant_id,
           res.location_id,
-          -res.quantity,
+          -shipQty,
           order.order_number,
           `شحن وتسليم طلب المبيعات ${order.order_number}`,
           userId,
@@ -499,18 +529,25 @@ export async function shipOrder(userId: number, orderId: number) {
       // Update shipped_quantity on order item
       await tx.execute(
         `UPDATE sales_order_items
-         SET shipped_quantity = quantity
-         WHERE id = $1`,
-        [res.order_item_id]
+         SET shipped_quantity = shipped_quantity + $1
+         WHERE id = $2`,
+        [shipQty, res.order_item_id]
       );
     }
 
-    // Update order status to shipped
+    // Check if any order item is still not fully shipped
+    const remainingItems = await tx.queryOne<{ count: string | number }>(
+      `SELECT COUNT(*) as count FROM sales_order_items WHERE order_id = $1 AND shipped_quantity < quantity`,
+      [orderId]
+    );
+    const hasRemaining = Number(remainingItems?.count || 0) > 0;
+
+    const finalStatus = hasRemaining ? 'confirmed' : 'shipped';
     await tx.execute(
       `UPDATE sales_orders
-       SET status = 'shipped', shipped_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1`,
-      [orderId]
+       SET status = $1, shipped_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2`,
+      [finalStatus, orderId]
     );
 
     // Audit log
@@ -522,13 +559,13 @@ export async function shipOrder(userId: number, orderId: number) {
         String(orderId),
         JSON.stringify({
           orderNumber: order.order_number,
-          itemsCount: reservations.length,
-          note: 'تم خصم الرصيد الفعلي للمخزون وتحويل الحجوزات إلى تسليم نهائي',
+          finalStatus,
+          note: hasRemaining ? 'شحن جزئي للطلب' : 'تم شحن وتسليم كامل الطلب',
         }),
       ]
     );
 
-    return { success: true, orderNumber: order.order_number };
+    return { success: true, orderNumber: order.order_number, status: finalStatus };
   });
 }
 
@@ -578,12 +615,35 @@ export async function getOrderDetails(orderId: number) {
     line_total: number;
     picked_quantity: number;
     shipped_quantity: number;
+    checked_quantity: number;
+    packed_quantity: number;
     on_hand_quantity: number;
     available_quantity: number;
+    shelf_code: string | null;
+    shelf_quantity: number;
+    qr_code_uid: string | null;
   }>(
     `SELECT soi.*,
+            COALESCE(soi.checked_quantity, 0) AS checked_quantity,
+            COALESCE(soi.packed_quantity, 0) AS packed_quantity,
             p.model_code, p.model_name,
             col.name AS color_name, sz.name AS size_name, pv.sku,
+            pv.qr_code_uid,
+            (
+              SELECT ws.shelf_code
+              FROM variant_shelves vs
+              JOIN warehouse_shelves ws ON vs.shelf_id = ws.id
+              WHERE vs.variant_id = pv.id
+              ORDER BY vs.is_primary DESC, vs.id ASC
+              LIMIT 1
+            ) AS shelf_code,
+            COALESCE((
+              SELECT vs.quantity
+              FROM variant_shelves vs
+              WHERE vs.variant_id = pv.id
+              ORDER BY vs.is_primary DESC, vs.id ASC
+              LIMIT 1
+            ), 0) AS shelf_quantity,
             COALESCE(ib.on_hand_quantity, 0) AS on_hand_quantity,
             (COALESCE(ib.on_hand_quantity, 0) - COALESCE(ib.reserved_quantity, 0)) AS available_quantity
      FROM sales_order_items soi

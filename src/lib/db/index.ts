@@ -176,12 +176,25 @@ async function testDbTransaction<T>(fn: (client: DbClient) => Promise<T>): Promi
   });
 }
 
+import { runMigrations } from './migrations';
+
 export async function ensureInitialized() {
   if (isInitialized) return;
 
   const databaseUrl = getDatabaseUrl();
   if (databaseUrl) {
-    // Supabase PostgreSQL is already migrated and seeded
+    try {
+      await withClient(async (client) => {
+        const dbClient: DbClient = {
+          query: (sql, params) => client.query(sql, params).then((r) => r.rows),
+          queryOne: (sql, params) => client.query(sql, params).then((r) => r.rows[0] || null),
+          execute: (sql, params) => client.query(sql, params).then((r) => r.rowCount || 0),
+        };
+        await runMigrations(dbClient);
+      });
+    } catch (err) {
+      console.warn('Migration on PostgreSQL:', err);
+    }
     isInitialized = true;
     return;
   }
@@ -280,6 +293,8 @@ export async function ensureInitialized() {
         );
       }
     }
+
+    await runMigrations(client);
 
     isInitialized = true;
   }

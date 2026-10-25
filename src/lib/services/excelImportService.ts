@@ -465,11 +465,12 @@ export async function commitImport(data: {
 
       let variantId: number;
       if (!variant) {
+        const qrUid = `VAR-${sku}-${Date.now().toString(36).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
         const vRes = await tx.query<{ id: number }>(
-          `INSERT INTO product_variants (product_id, color_id, size_id, sku, active)
-           VALUES ($1, $2, $3, $4, true)
+          `INSERT INTO product_variants (product_id, color_id, size_id, sku, qr_code_uid, active)
+           VALUES ($1, $2, $3, $4, $5, true)
            RETURNING id`,
-          [prodId, colorId, sizeId, sku]
+          [prodId, colorId, sizeId, sku, qrUid]
         );
         variantId = vRes[0].id;
       } else {

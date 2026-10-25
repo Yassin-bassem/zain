@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { AppShell } from '@/components/layout/AppShell';
-import { Users, Plus, Search, Phone, MapPin, Loader2, AlertCircle, ShoppingCart } from 'lucide-react';
+import Link from 'next/link';
+import { Users, Plus, Search, Phone, MapPin, Loader2, AlertCircle, ShoppingCart, User, ArrowLeft } from 'lucide-react';
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<any[]>([]);
@@ -136,19 +137,26 @@ export default function CustomersPage() {
                     <th className="py-3 px-4">كود العميل</th>
                     <th className="py-3 px-4">اسم العميل / المحل</th>
                     <th className="py-3 px-4">رقم الهاتف الأساسي</th>
-                    <th className="py-3 px-4">رقم إضافي</th>
                     <th className="py-3 px-4">العنوان أو المحافظة</th>
-                    <th className="py-3 px-4 text-center">عدد الطلبات المسجلة</th>
+                    <th className="py-3 px-4 text-center">عدد الطلبات</th>
                     <th className="py-3 px-4">ملاحظات</th>
+                    <th className="py-3 px-4 text-center">الملف الشخصي</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {customers.map((c) => (
-                    <tr key={c.id} className="hover:bg-slate-50">
-                      <td className="py-3 px-4 font-mono font-bold text-indigo-700">{c.customer_code}</td>
-                      <td className="py-3 px-4 font-bold text-slate-900">{c.name}</td>
+                    <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-3 px-4 font-mono font-bold text-indigo-700">
+                        <Link href={`/customers/${c.id}`} className="hover:underline">
+                          {c.customer_code}
+                        </Link>
+                      </td>
+                      <td className="py-3 px-4 font-bold text-slate-900">
+                        <Link href={`/customers/${c.id}`} className="hover:text-indigo-600 transition-colors">
+                          {c.name}
+                        </Link>
+                      </td>
                       <td className="py-3 px-4 font-mono text-slate-800">{c.phone}</td>
-                      <td className="py-3 px-4 font-mono text-slate-500">{c.alternate_phone || '—'}</td>
                       <td className="py-3 px-4 text-slate-600">{c.address || '—'}</td>
                       <td className="py-3 px-4 text-center">
                         <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-800 font-bold text-[11px]">
@@ -156,6 +164,15 @@ export default function CustomersPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-slate-400 text-[11px] truncate max-w-xs">{c.notes || '—'}</td>
+                      <td className="py-3 px-4 text-center">
+                        <Link
+                          href={`/customers/${c.id}`}
+                          className="inline-flex items-center gap-1 px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition-colors"
+                        >
+                          <span>عرض الملف</span>
+                          <ArrowLeft className="w-3 h-3" />
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

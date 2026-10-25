@@ -10,11 +10,14 @@ export async function GET(req: NextRequest) {
   try {
     const returns = await query(
       `SELECT sr.*, c.name AS customer_name, so.order_number, u.full_name AS created_by_name,
+              app_u.full_name AS approved_by_name, rej_u.full_name AS rejected_by_name,
               (SELECT COUNT(*) FROM sales_return_items sri WHERE sri.return_id = sr.id) as items_count
        FROM sales_returns sr
        JOIN customers c ON sr.customer_id = c.id
        LEFT JOIN sales_orders so ON sr.order_id = so.id
        LEFT JOIN users u ON sr.created_by = u.id
+       LEFT JOIN users app_u ON sr.approved_by = app_u.id
+       LEFT JOIN users rej_u ON sr.rejected_by = rej_u.id
        ORDER BY sr.created_at DESC`
     );
 

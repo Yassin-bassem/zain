@@ -26,6 +26,10 @@ import {
   LogOut,
   User,
   X,
+  QrCode,
+  Boxes,
+  ClipboardList,
+  ScanLine,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -69,26 +73,51 @@ export function Sidebar({ user, isOpenMobile, onCloseMobile }: SidebarProps) {
     {
       title: 'الرئيسية',
       items: [
-        { href: '/', label: 'لوحة التحكم والمؤشرات', icon: LayoutDashboard },
+        { href: '/', label: 'لوحة التحكم', icon: LayoutDashboard },
       ],
     },
     {
-      title: 'الموديلات والكتالوج',
+      title: 'الموديلات والأصناف',
       items: [
-        { href: '/products', label: 'الموديلات والأصناف', icon: Layers },
+        { href: '/products', label: 'المنتجات والموديلات', icon: Layers },
+        { href: '/products/labels', label: 'طباعة باركود وQR الأصناف', icon: QrCode, roles: ['admin', 'sales', 'warehouse'] },
         { href: '/products/bulk-variants', label: 'مُوَلّد المتغيرات السريع', icon: PlusCircle, roles: ['admin'] },
         { href: '/attributes', label: 'الألوان والمقاسات', icon: Palette, roles: ['admin'] },
       ],
     },
     {
-      title: 'المخزون والأرصدة',
+      title: 'المخزون والمستودع',
       items: [
-        { href: '/inventory', label: 'بحث الأرصدة والمخزن', icon: Warehouse },
+        { href: '/inventory', label: 'المخزون والأرصدة', icon: Warehouse },
+        { href: '/warehouse/shelves', label: 'أرفف ومواقع المستودع', icon: Boxes, roles: ['admin', 'warehouse'] },
         { href: '/inventory/movements', label: 'سجل حركات المخزن', icon: History },
       ],
     },
     {
-      title: 'استيراد إكسيل والرصيد الافتتاحي',
+      title: 'تحضير ومراجعة الطلبات',
+      items: [
+        { href: '/warehouse/preparation', label: 'تحضير الأوردر (Picking)', icon: PackageCheck, roles: ['admin', 'warehouse'] },
+        { href: '/orders/new', label: 'إنشاء طلب جملة مشكل', icon: PlusCircle, roles: ['admin', 'sales'] },
+        { href: '/orders', label: 'كافة الفواتير والطلبات', icon: ShoppingCart },
+      ],
+    },
+    {
+      title: 'العمليات اللوجستية والجرد',
+      items: [
+        { href: '/warehouse/receipts', label: 'استلام البضاعة من المصانع', icon: PackagePlus, roles: ['admin', 'warehouse'] },
+        { href: '/inventory/audit', label: 'الجرد الفعلي للمخزون', icon: ClipboardList, roles: ['admin', 'warehouse'] },
+        { href: '/returns', label: 'المرتجعات والموافقات', icon: RotateCcw, roles: ['admin', 'sales', 'warehouse'] },
+      ],
+    },
+    {
+      title: 'الشركاء والجهات',
+      items: [
+        { href: '/customers', label: 'العملاء ومحلات الأطفال', icon: Users },
+        { href: '/suppliers', label: 'الموردون والمصانع', icon: Building2, roles: ['admin', 'warehouse'] },
+      ],
+    },
+    {
+      title: 'استيراد إكسيل',
       items: [
         { href: '/import', label: 'معالج استيراد الإكسيل', icon: FileSpreadsheet, roles: ['admin'] },
         { href: '/import/opening', label: 'اعتماد الرصيد الافتتاحي', icon: CheckCircle2, roles: ['admin'] },
@@ -96,34 +125,11 @@ export function Sidebar({ user, isOpenMobile, onCloseMobile }: SidebarProps) {
       ],
     },
     {
-      title: 'طلبات الجملة المشكل',
-      items: [
-        { href: '/orders/new', label: 'إنشاء طلب جملة سريع', icon: PlusCircle, roles: ['admin', 'sales'] },
-        { href: '/orders', label: 'كافة طلبات المبيعات', icon: ShoppingCart },
-      ],
-    },
-    {
-      title: 'عمليات المستودع',
-      items: [
-        { href: '/warehouse/picking', label: 'أوامر التجهيز والالتقاط', icon: PackageCheck, roles: ['admin', 'warehouse'] },
-        { href: '/warehouse/shipping', label: 'التغليف والتسليم النهائي', icon: Truck, roles: ['admin', 'warehouse'] },
-        { href: '/warehouse/receipts', label: 'استلام بضاعة الموردين', icon: PackagePlus, roles: ['admin', 'warehouse'] },
-        { href: '/returns', label: 'فحص المرتجعات والتسويات', icon: RotateCcw, roles: ['admin', 'warehouse'] },
-      ],
-    },
-    {
-      title: 'الشركاء والجهات',
-      items: [
-        { href: '/customers', label: 'العملاء ومحلات الأطفال', icon: Users },
-        { href: '/suppliers', label: 'المصانع والموردين', icon: Building2, roles: ['admin', 'warehouse'] },
-      ],
-    },
-    {
-      title: 'التقارير والإدارة',
+      title: 'الإدارة والرقابة',
       items: [
         { href: '/reports', label: 'التقارير والإحصائيات', icon: BarChart3 },
-        { href: '/users', label: 'المستخدمين والصلاحيات', icon: ShieldCheck, roles: ['admin'] },
-        { href: '/settings', label: 'الإعدادات وسجل الرقابة', icon: Settings, roles: ['admin'] },
+        { href: '/users', label: 'المستخدمون والصلاحيات', icon: ShieldCheck, roles: ['admin'] },
+        { href: '/settings', label: 'سجل العمليات والإعدادات', icon: Settings, roles: ['admin'] },
       ],
     },
   ];
