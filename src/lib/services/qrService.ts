@@ -13,6 +13,7 @@ export interface PrintableLabel {
   shelf_code: string | null;
   default_price: number;
   qr_data_url: string;
+  on_hand_quantity: number;
 }
 
 export interface ResolvedVariant {
@@ -200,7 +201,12 @@ export async function getPrintableLabels(filter: {
               WHERE vs.variant_id = pv.id
               ORDER BY vs.is_primary DESC, vs.id ASC
               LIMIT 1
-            ) as shelf_code
+            ) as shelf_code,
+            COALESCE((
+              SELECT COALESCE(SUM(ib.on_hand_quantity), 0)
+              FROM inventory_balances ib
+              WHERE ib.variant_id = pv.id
+            ), 0) as on_hand_quantity
      FROM product_variants pv
      JOIN products p ON pv.product_id = p.id
      JOIN colors c ON pv.color_id = c.id
@@ -234,6 +240,7 @@ export async function getPrintableLabels(filter: {
       shelf_code: r.shelf_code,
       default_price: Number(r.default_price || 0),
       qr_data_url: dataUrl,
+      on_hand_quantity: Number(r.on_hand_quantity || 0),
     });
   }
 

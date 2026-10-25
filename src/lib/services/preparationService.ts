@@ -1,4 +1,4 @@
-import { query, queryOne, transaction } from '@/lib/db';
+import { query, queryOne, execute, transaction } from '@/lib/db';
 import { resolveVariantByScannedCode } from './qrService';
 
 export interface PreparationOrderSummary {
@@ -633,3 +633,18 @@ export async function confirmReviewCompletion(
     return { success: true };
   });
 }
+
+export async function clearReviewDiscrepancies(
+  sessionId: number,
+  orderId: number,
+  userId: number
+): Promise<{ success: boolean; clearedCount: number }> {
+  const result = await execute(
+    `DELETE FROM order_review_scans 
+     WHERE session_id = $1 AND order_id = $2 AND status IN ('wrong', 'excess')`,
+    [sessionId, orderId]
+  );
+
+  return { success: true, clearedCount: result };
+}
+

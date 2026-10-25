@@ -36,13 +36,19 @@ function OrderReviewQrContent() {
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [manualCode, setManualCode] = useState('');
   const [isSubmittingScan, setIsSubmittingScan] = useState(false);
+  const [scanCooldownActive, setScanCooldownActive] = useState(false);
   const [lastScanResult, setLastScanResult] = useState<any>(null);
   const [confirmingReview, setConfirmingReview] = useState(false);
   const [confirmError, setConfirmError] = useState('');
   const [confirmSuccess, setConfirmSuccess] = useState(false);
+  const [clearingDiscrepancies, setClearingDiscrepancies] = useState(false);
 
   const html5QrCodeRef = useRef<any>(null);
   const manualInputRef = useRef<HTMLInputElement>(null);
+  const isProcessingScanRef = useRef(false);
+  const lastScannedCodeRef = useRef('');
+  const lastScannedTimeRef = useRef(0);
+  const cooldownUntilRef = useRef(0);
 
   const fetchSession = async () => {
     try {
@@ -120,11 +126,31 @@ function OrderReviewQrContent() {
   }, [isCameraActive]);
 
   const handleScanCode = async (codeToScan: string) => {
-    if (!codeToScan.trim() || isSubmittingScan) return;
+    const cleanCode = (codeToScan || '').trim();
+    if (!cleanCode) return;
     if (!sessionData?.session?.id) return;
 
+    const now = Date.now();
+
+    // 1. Check strict ref-based locks to ignore rapid-fire camera frames
+    if (isProcessingScanRef.current || now < cooldownUntilRef.current) {
+      return;
+    }
+
+    // 2. Prevent scanning the exact same code repeatedly within 3.5 seconds
+    if (lastScannedCodeRef.current === cleanCode && (now - lastScannedTimeRef.current) < 3500) {
+      return;
+    }
+
+    // Acquire lock immediately
+    isProcessingScanRef.current = true;
+    lastScannedCodeRef.current = cleanCode;
+    lastScannedTimeRef.current = now;
+    cooldownUntilRef.current = now + 1200; // minimum 1.2s cooldown
+    setIsSubmittingScan(true);
+    setScanCooldownActive(true);
+
     try {
-      setIsSubmittingScan(true);
       const idempotencyKey = `SCAN-${sessionData.session.id}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
 
       const res = await fetch(`/api/preparation/${orderId}/review/scan`, {
@@ -132,7 +158,7 @@ function OrderReviewQrContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: sessionData.session.id,
-          code: codeToScan.trim(),
+          code: cleanCode,
           idempotency_key: idempotencyKey,
         }),
       });
@@ -140,18 +166,82 @@ function OrderReviewQrContent() {
       const result = await res.json();
       setLastScanResult(result);
 
+      // Extra cooldown on warning/error to let operator move the phone away
+      if (result.outcome === 'excess' || result.outcome === 'wrong' || result.outcome === 'unknown') {
+        cooldownUntilRef.current = Date.now() + 2500;
+      }
+
+      // Haptic feedback if supported
+      try {
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          if (result.outcome === 'correct') {
+            navigator.vibrate(80);
+          } else {
+            navigator.vibrate([150, 80, 150]);
+          }
+        }
+      } catch {}
+
       if (res.ok) {
         setManualCode('');
         // Refresh session items & scans
-        fetchSession();
+        await fetchSession();
       }
     } catch (err: any) {
       console.error('Scan error:', err);
+      cooldownUntilRef.current = Date.now() + 2000;
     } finally {
       setIsSubmittingScan(false);
+      setTimeout(() => {
+        isProcessingScanRef.current = false;
+        setScanCooldownActive(false);
+      }, 800);
+
       if (manualInputRef.current) {
         manualInputRef.current.focus();
       }
+    }
+  };
+
+  const handleClearDiscrepancies = async () => {
+    if (!sessionData?.session?.id) return;
+    const scansList = sessionData?.scans || [];
+    const excessCount = scansList.filter((s: any) => s.status === 'excess').length;
+    const wrongCount = scansList.filter((s: any) => s.status === 'wrong').length;
+    const total = excessCount + wrongCount;
+
+    if (total === 0) {
+      alert('لا توجد مسحات خاطئة أو زائدة حالياً.');
+      return;
+    }
+
+    if (
+      !confirm(
+        `هل تريد تصفير وحذف جميع المسحات الخاطئة والزائدة (${total} مسحة)؟\nلن تتأثر القطع الصحيحة المعتمدة.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setClearingDiscrepancies(true);
+      const res = await fetch(`/api/preparation/${orderId}/review/clear-discrepancies`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionData.session.id,
+        }),
+      });
+
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || 'فشل تصفير المسحات');
+
+      await fetchSession();
+      alert(`تم حذف وتصفير المسحات بنجاح (${resData.clearedCount || total} مسحة). يمكنك الآن متابعة الفحص أو اعتماد الأوردر.`);
+    } catch (err: any) {
+      alert('خطأ: ' + err.message);
+    } finally {
+      setClearingDiscrepancies(false);
     }
   };
 
@@ -330,6 +420,39 @@ function OrderReviewQrContent() {
           </div>
         </div>
 
+        {/* Discrepancy Alert & Fast Reset Action Banner */}
+        {(excessScansCount > 0 || wrongScansCount > 0) && (
+          <div className="bg-rose-50 border-2 border-rose-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-xs animate-in fade-in">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 border border-rose-200 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-rose-600" />
+              </div>
+              <div>
+                <h4 className="font-black text-rose-950 text-xs sm:text-sm">
+                  تم رصد {excessScansCount + wrongScansCount} فحص غير مطابق ({excessScansCount} قطع زائدة + {wrongScansCount} أصناف غير مطلوبة)
+                </h4>
+                <p className="text-[11px] text-rose-700 mt-0.5">
+                  إذا حدث هذا نتيجة المسح المتكرر بالكاميرا أو الخطأ، اضغط على الزر لتصفيرها فوراً والعودة للحالة النظيفة.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleClearDiscrepancies}
+              disabled={clearingDiscrepancies}
+              className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              {clearingDiscrepancies ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RotateCcw className="w-4 h-4" />
+              )}
+              <span>تصفير وحذف المسحات الخاطئة والزائدة ({excessScansCount + wrongScansCount})</span>
+            </button>
+          </div>
+        )}
+
         {/* Scanning Controls Box */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
           {/* Scanner Box (Left Column on large) */}
@@ -364,9 +487,17 @@ function OrderReviewQrContent() {
             {isCameraActive ? (
               <div className="relative rounded-2xl overflow-hidden bg-slate-950 aspect-square flex items-center justify-center border-2 border-indigo-500">
                 <div id="qr-reader-container" className="w-full h-full" />
-                <div className="absolute top-3 right-3 bg-slate-900/80 text-white px-2.5 py-1 rounded-full text-[10px] font-bold">
+                <div className="absolute top-3 right-3 bg-slate-900/80 text-white px-2.5 py-1 rounded-full text-[10px] font-bold z-10">
                   الكاميرا نشطة - وجّه الملصق
                 </div>
+                {scanCooldownActive && (
+                  <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-[2px] flex items-center justify-center text-center p-4 z-20">
+                    <div className="bg-white/95 text-slate-900 px-4 py-2.5 rounded-2xl text-xs font-black shadow-xl flex items-center gap-2 border border-slate-200">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 animate-pulse" />
+                      <span>تم تسجيل الفحص! وجّه الكاميرا للقطعة التالية</span>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div
@@ -557,12 +688,25 @@ function OrderReviewQrContent() {
 
         {/* Scan Audit Log History */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex flex-wrap items-center justify-between pb-3 border-b border-slate-100 gap-2">
             <h3 className="font-black text-slate-900 text-sm flex items-center gap-2">
               <RotateCcw className="w-4 h-4 text-slate-600" />
               <span>سجل حركات الفحص في هذه الجلسة ({scans.length} عملية فحص)</span>
             </h3>
-            <span className="text-xs text-slate-400">يمكن التراجع عن أي فحص مسجل بالخطأ</span>
+            <div className="flex items-center gap-3">
+              {(excessScansCount > 0 || wrongScansCount > 0) && (
+                <button
+                  type="button"
+                  onClick={handleClearDiscrepancies}
+                  disabled={clearingDiscrepancies}
+                  className="px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>تصفير المسحات الخاطئة والزائدة ({excessScansCount + wrongScansCount})</span>
+                </button>
+              )}
+              <span className="text-xs text-slate-400">يمكن التراجع عن أي فحص مسجل بالخطأ</span>
+            </div>
           </div>
 
           {scans.length === 0 ? (
