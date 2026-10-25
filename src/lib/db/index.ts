@@ -1,4 +1,4 @@
-import { Client } from 'pg';
+import { Pool, Client } from 'pg';
 
 export interface DbClient {
   query<T = any>(sql: string, params?: any[]): Promise<T[]>;
@@ -8,6 +8,8 @@ export interface DbClient {
 
 let isInitialized = false;
 let pgliteInstance: any = null;
+
+const globalForDb = global as unknown as { pool?: Pool };
 
 const DEFAULT_SUPABASE_URL =
   'postgresql://postgres.lftpaujmbpfbawdwmfxh:Yassin1980%24bassem@aws-0-eu-west-1.pooler.supabase.com:6543/postgres';
@@ -19,29 +21,34 @@ export function getDatabaseUrl(): string | undefined {
   return process.env.DATABASE_URL || DEFAULT_SUPABASE_URL;
 }
 
-function createClient(databaseUrl: string): Client {
-  const isSupabaseOrSsl =
-    databaseUrl.includes('supabase') ||
-    databaseUrl.includes('sslmode=require') ||
-    databaseUrl.includes('pooler.supabase.com');
+export function getPool(databaseUrl?: string): Pool {
+  if (globalForDb.pool) return globalForDb.pool;
 
-  return new Client({
-    connectionString: databaseUrl,
+  const url = databaseUrl || getDatabaseUrl() || DEFAULT_SUPABASE_URL;
+  const isSupabaseOrSsl =
+    url.includes('supabase') ||
+    url.includes('sslmode=require') ||
+    url.includes('pooler.supabase.com');
+
+  const pool = new Pool({
+    connectionString: url,
     ssl: isSupabaseOrSsl ? { rejectUnauthorized: false } : undefined,
+    max: 10,
+    idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
   });
+
+  globalForDb.pool = pool;
+  return pool;
 }
 
-export async function withClient<T>(fn: (client: Client) => Promise<T>): Promise<T> {
-  const databaseUrl = getDatabaseUrl();
-  const client = createClient(databaseUrl || DEFAULT_SUPABASE_URL);
-  await client.connect();
+export async function withClient<T>(fn: (client: Client | any) => Promise<T>): Promise<T> {
+  const pool = getPool();
+  const client = await pool.connect();
   try {
     return await fn(client);
   } finally {
-    try {
-      await client.end();
-    } catch {}
+    client.release();
   }
 }
 
@@ -66,10 +73,9 @@ export async function query<T = any>(sql: string, params?: any[]): Promise<T[]> 
     const db = await getTestDb();
     return db.query<T>(sql, params);
   }
-  return await withClient(async (client) => {
-    const res = await client.query(sql, params);
-    return res.rows as T[];
-  });
+  const pool = getPool(databaseUrl || DEFAULT_SUPABASE_URL);
+  const res = await pool.query(sql, params);
+  return res.rows as T[];
 }
 
 export async function queryOne<T = any>(sql: string, params?: any[]): Promise<T | null> {
@@ -79,10 +85,9 @@ export async function queryOne<T = any>(sql: string, params?: any[]): Promise<T 
     const db = await getTestDb();
     return db.queryOne<T>(sql, params);
   }
-  return await withClient(async (client) => {
-    const res = await client.query(sql, params);
-    return (res.rows[0] as T) || null;
-  });
+  const pool = getPool(databaseUrl || DEFAULT_SUPABASE_URL);
+  const res = await pool.query(sql, params);
+  return (res.rows[0] as T) || null;
 }
 
 export async function execute(sql: string, params?: any[]): Promise<number> {
@@ -92,10 +97,9 @@ export async function execute(sql: string, params?: any[]): Promise<number> {
     const db = await getTestDb();
     return db.execute(sql, params);
   }
-  return await withClient(async (client) => {
-    const res = await client.query(sql, params);
-    return res.rowCount || 0;
-  });
+  const pool = getPool(databaseUrl || DEFAULT_SUPABASE_URL);
+  const res = await pool.query(sql, params);
+  return res.rowCount || 0;
 }
 
 export async function transaction<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
@@ -105,7 +109,9 @@ export async function transaction<T>(fn: (client: DbClient) => Promise<T>): Prom
     return await testDbTransaction(fn);
   }
 
-  return await withClient(async (client) => {
+  const pool = getPool(databaseUrl || DEFAULT_SUPABASE_URL);
+  const client = await pool.connect();
+  try {
     await client.query('BEGIN');
     const txClient: DbClient = {
       async query<R = any>(sql: string, params?: any[]): Promise<R[]> {
@@ -122,15 +128,17 @@ export async function transaction<T>(fn: (client: DbClient) => Promise<T>): Prom
       },
     };
 
+    const result = await fn(txClient);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
     try {
-      const result = await fn(txClient);
-      await client.query('COMMIT');
-      return result;
-    } catch (err) {
       await client.query('ROLLBACK');
-      throw err;
-    }
-  });
+    } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 async function getTestDb(): Promise<DbClient> {
@@ -180,27 +188,10 @@ import { runMigrations } from './migrations';
 
 export async function ensureInitialized() {
   if (isInitialized) return;
-
-  const databaseUrl = getDatabaseUrl();
-  if (databaseUrl) {
-    try {
-      await withClient(async (client) => {
-        const dbClient: DbClient = {
-          query: (sql, params) => client.query(sql, params).then((r) => r.rows),
-          queryOne: (sql, params) => client.query(sql, params).then((r) => r.rows[0] || null),
-          execute: (sql, params) => client.query(sql, params).then((r) => r.rowCount || 0),
-        };
-        await runMigrations(dbClient);
-      });
-    } catch (err) {
-      console.warn('Migration on PostgreSQL:', err);
-    }
-    isInitialized = true;
-    return;
-  }
+  isInitialized = true;
 
   // Only run schema setup in PGlite in-memory test environment
-  if (process.env.NODE_ENV === 'test') {
+  if (process.env.NODE_ENV === 'test' && !process.env.TEST_SUPABASE) {
     try {
       const fs = require('fs');
       const path = require('path');
@@ -295,8 +286,27 @@ export async function ensureInitialized() {
     }
 
     await runMigrations(client);
+    return;
+  }
 
-    isInitialized = true;
+  // In live production, migrations are already completed on Supabase!
+  // Only execute migrations if explicitly requested via environment variable
+  if (process.env.RUN_MIGRATIONS === 'true') {
+    const databaseUrl = getDatabaseUrl();
+    if (databaseUrl) {
+      try {
+        await withClient(async (client) => {
+          const dbClient: DbClient = {
+            query: (sql, params) => client.query(sql, params).then((r: any) => r.rows),
+            queryOne: (sql, params) => client.query(sql, params).then((r: any) => r.rows[0] || null),
+            execute: (sql, params) => client.query(sql, params).then((r: any) => r.rowCount || 0),
+          };
+          await runMigrations(dbClient);
+        });
+      } catch (err) {
+        console.warn('Migration on PostgreSQL:', err);
+      }
+    }
   }
 }
 

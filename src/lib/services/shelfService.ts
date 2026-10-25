@@ -1,4 +1,4 @@
-import { query, queryOne, transaction } from '@/lib/db';
+import { query, queryOne, execute, transaction } from '@/lib/db';
 
 export interface WarehouseShelf {
   id: number;
@@ -298,4 +298,78 @@ export async function assignVariantToShelf(first: any, second?: any) {
   }
   return await assignVariantShelf(first);
 }
+
+export async function getShelfAssignedVariants(shelfId: number) {
+  const rows = await query<any>(
+    `SELECT vs.id, vs.variant_id, vs.shelf_id, vs.quantity as shelf_quantity, vs.is_primary,
+            pv.sku, pv.qr_code_uid,
+            p.model_code, p.model_name,
+            c.name as color_name, sz.name as size_name,
+            COALESCE(ib.on_hand_quantity, 0) as total_on_hand,
+            ws.shelf_code
+     FROM variant_shelves vs
+     JOIN warehouse_shelves ws ON vs.shelf_id = ws.id
+     JOIN product_variants pv ON vs.variant_id = pv.id
+     JOIN products p ON pv.product_id = p.id
+     JOIN colors c ON pv.color_id = c.id
+     JOIN sizes sz ON pv.size_id = sz.id
+     LEFT JOIN inventory_balances ib ON pv.id = ib.variant_id
+     WHERE vs.shelf_id = $1
+     ORDER BY p.model_code ASC, c.name ASC, sz.sort_order ASC`,
+    [shelfId]
+  );
+
+  return rows.map((r) => ({
+    ...r,
+    shelf_quantity: Number(r.shelf_quantity || 0),
+    total_on_hand: Number(r.total_on_hand || 0),
+    is_primary: Boolean(r.is_primary),
+  }));
+}
+
+export async function removeVariantFromShelf(shelfId: number, variantId: number) {
+  await execute(
+    `DELETE FROM variant_shelves WHERE shelf_id = $1 AND variant_id = $2`,
+    [shelfId, variantId]
+  );
+  return { success: true };
+}
+
+export async function searchVariantsForAssignment(search?: string) {
+  const params: any[] = [];
+  let where = 'pv.active = true';
+  if (search?.trim()) {
+    where += ` AND (p.model_code ILIKE $1 OR p.model_name ILIKE $1 OR c.name ILIKE $1 OR sz.name ILIKE $1 OR pv.sku ILIKE $1 OR pv.qr_code_uid ILIKE $1)`;
+    params.push(`%${search.trim()}%`);
+  }
+
+  const rows = await query<any>(
+    `SELECT pv.id as variant_id, pv.sku, pv.qr_code_uid,
+            p.model_code, p.model_name,
+            c.name as color_name, sz.name as size_name,
+            COALESCE(ib.on_hand_quantity, 0) as on_hand_quantity,
+            (
+              SELECT ws.shelf_code
+              FROM variant_shelves vs
+              JOIN warehouse_shelves ws ON vs.shelf_id = ws.id
+              WHERE vs.variant_id = pv.id AND vs.is_primary = true
+              LIMIT 1
+            ) as current_shelf_code
+     FROM product_variants pv
+     JOIN products p ON pv.product_id = p.id
+     JOIN colors c ON pv.color_id = c.id
+     JOIN sizes sz ON pv.size_id = sz.id
+     LEFT JOIN inventory_balances ib ON pv.id = ib.variant_id
+     WHERE ${where}
+     ORDER BY p.model_code ASC, c.name ASC, sz.sort_order ASC
+     LIMIT 50`,
+    params
+  );
+
+  return rows.map((r) => ({
+    ...r,
+    on_hand_quantity: Number(r.on_hand_quantity || 0),
+  }));
+}
+
 

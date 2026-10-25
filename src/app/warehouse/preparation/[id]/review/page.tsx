@@ -62,7 +62,9 @@ function OrderReviewQrContent() {
   };
 
   useEffect(() => {
-    fetchSession();
+    if (orderId) {
+      fetchSession();
+    }
   }, [orderId]);
 
   // Handle camera start/stop
@@ -222,14 +224,23 @@ function OrderReviewQrContent() {
       <AppShell title="خطأ في جلسة المراجعة" subtitle="تعذر جلب البيانات">
         <div className="p-8 max-w-xl mx-auto bg-white rounded-2xl border border-rose-200 text-center space-y-4">
           <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto" />
-          <h2 className="text-base font-black text-slate-900">{error}</h2>
-          <Link
-            href={`/warehouse/preparation/${orderId}`}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-xl text-xs font-bold"
-          >
-            <ArrowRight className="w-4 h-4" />
-            <span>العودة لشاشة الفاتورة</span>
-          </Link>
+          <h2 className="text-base font-black text-slate-900">{error || 'لم يتم العثور على جلسة مراجعة'}</h2>
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <button
+              onClick={() => fetchSession()}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>إعادة المحاولة</span>
+            </button>
+            <Link
+              href={`/warehouse/preparation/${orderId}`}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-xl text-xs font-bold"
+            >
+              <ArrowRight className="w-4 h-4" />
+              <span>العودة لشاشة الفاتورة</span>
+            </Link>
+          </div>
         </div>
       </AppShell>
     );

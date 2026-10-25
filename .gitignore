@@ -25,6 +25,8 @@
 # misc
 .DS_Store
 *.pem
+*.mp4
+*.MP4
 
 # debug
 npm-debug.log*

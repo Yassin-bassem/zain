@@ -202,7 +202,7 @@ export async function getOrCreateReviewSession(first: number, second: number) {
 
     // Check order
     const order = await tx.queryOne<any>(
-      `SELECT id, order_number, status, preparation_status, total_pieces FROM sales_orders WHERE id = $1 FOR UPDATE`,
+      `SELECT id, order_number, status, preparation_status, total_pieces FROM sales_orders WHERE id = $1`,
       [orderId]
     );
     if (!order) throw new Error('الطلب غير موجود.');
