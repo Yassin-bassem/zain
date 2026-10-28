@@ -24,7 +24,7 @@ export default function QrLabelsPage() {
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [copies, setCopies] = useState<Record<number, number>>({});
-  const [printMode, setPrintMode] = useState<'thermal' | 'a4'>('thermal');
+  const [printMode, setPrintMode] = useState<'normal' | 'thermal' | 'a4_grid'>('normal');
   const [backfilling, setBackfilling] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -40,13 +40,12 @@ export default function QrLabelsPage() {
         // Select all by default
         setSelectedIds(new Set(loadedLabels.map((l) => l.variant_id)));
 
-        // Default copies to on_hand_quantity (or 1 if stock is 0)
+        // Default copies to 1 for all items (normal printing, single copy per QR code)
         setCopies((prev) => {
           const next = { ...prev };
           loadedLabels.forEach((l) => {
             if (next[l.variant_id] === undefined) {
-              const stock = Number(l.on_hand_quantity || 0);
-              next[l.variant_id] = stock > 0 ? stock : 1;
+              next[l.variant_id] = 1;
             }
           });
           return next;
@@ -86,22 +85,22 @@ export default function QrLabelsPage() {
     setCopies((prev) => ({ ...prev, [variantId]: count }));
   };
 
+  const handleSetAllToOne = () => {
+    setCopies((prev) => {
+      const next = { ...prev };
+      labels.forEach((l) => {
+        next[l.variant_id] = 1;
+      });
+      return next;
+    });
+  };
+
   const handleSetAllToStock = () => {
     setCopies((prev) => {
       const next = { ...prev };
       labels.forEach((l) => {
         const stock = Number(l.on_hand_quantity || 0);
         next[l.variant_id] = stock > 0 ? stock : 1;
-      });
-      return next;
-    });
-  };
-
-  const handleSetAllToOne = () => {
-    setCopies((prev) => {
-      const next = { ...prev };
-      labels.forEach((l) => {
-        next[l.variant_id] = 1;
       });
       return next;
     });
@@ -129,7 +128,7 @@ export default function QrLabelsPage() {
 
   const selectedLabels = labels.filter((l) => selectedIds.has(l.variant_id));
 
-  // Total stickers to print
+  // Total stickers/pages to print
   const totalPrintStickers = selectedLabels.reduce(
     (sum, l) => sum + (copies[l.variant_id] || 1),
     0
@@ -147,8 +146,8 @@ export default function QrLabelsPage() {
 
   return (
     <AppShell
-      title="توليد وطباعة استيكرات الباركود وQR"
-      subtitle="طباعة ملصقات الباركود والـ QR بالعدد المطلوب أو حسب رصيد المخزن الفعلي لطابعات الاستيكرات الحرارية"
+      title="طباعة أكواد الباركود والـ QR"
+      subtitle="طباعة عادية لكل كود QR في صفحة منفصلة مستقلة لتسهيل الفحص والتعليق في المخزن"
     >
       <div className="space-y-6">
         {/* Actions & Filters Bar - Hidden during printing */}
@@ -197,11 +196,11 @@ export default function QrLabelsPage() {
               <button
                 onClick={handlePrint}
                 disabled={selectedIds.size === 0 || totalPrintStickers === 0}
-                className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md transition-all cursor-pointer disabled:opacity-50"
               >
                 <Printer className="w-4 h-4" />
                 <span>
-                  طباعة {totalPrintStickers} ملصق ({selectedIds.size} صنف)
+                  طباعة {totalPrintStickers} {printMode === 'normal' ? 'صفحة' : 'ملصق'} ({selectedIds.size} صنف)
                 </span>
               </button>
             </div>
@@ -236,7 +235,7 @@ export default function QrLabelsPage() {
                 </span>
                 <span className="text-slate-300">|</span>
                 <span className="font-black text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                  إجمالي الملصقات للطباعة: {totalPrintStickers} ملصق
+                  إجمالي المطبوعات: {totalPrintStickers} {printMode === 'normal' ? 'صفحة' : 'ملصق'}
                 </span>
               </div>
 
@@ -244,25 +243,36 @@ export default function QrLabelsPage() {
               <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-200">
                 <button
                   type="button"
-                  onClick={() => setPrintMode('thermal')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    printMode === 'thermal'
-                      ? 'bg-indigo-600 text-white shadow-2xs'
+                  onClick={() => setPrintMode('normal')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    printMode === 'normal'
+                      ? 'bg-indigo-600 text-white shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  طابعة حرارية (استيكر فردي لكل صفحة)
+                  طباعة عادية (كل كود في صفحة مستقلة)
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPrintMode('a4')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    printMode === 'a4'
-                      ? 'bg-indigo-600 text-white shadow-2xs'
+                  onClick={() => setPrintMode('thermal')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    printMode === 'thermal'
+                      ? 'bg-indigo-600 text-white shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  ورق A4 (شبكة ملصقات)
+                  طابعة حرارية (استيكر رول)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintMode('a4_grid')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    printMode === 'a4_grid'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  ورق A4 (شبكة ملصقات متعددة)
                 </button>
               </div>
             </div>
@@ -270,28 +280,30 @@ export default function QrLabelsPage() {
             {/* Quick Bulk Actions for Copies */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/80 text-xs">
               <div className="flex items-center gap-2">
-                <span className="text-slate-500 font-bold">تعيين سريع لكميات الطباعة:</span>
-                <button
-                  type="button"
-                  onClick={handleSetAllToStock}
-                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-lg font-bold transition-colors cursor-pointer flex items-center gap-1"
-                >
-                  <Package className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>تلقائي = رصيد المخزن الفعلي للكل</span>
-                </button>
+                <span className="text-slate-500 font-bold">النسخ:</span>
                 <button
                   type="button"
                   onClick={handleSetAllToOne}
-                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-lg font-bold transition-colors cursor-pointer"
+                  className="px-3 py-1 bg-white hover:bg-slate-100 border border-slate-300 text-indigo-700 font-black rounded-lg transition-colors cursor-pointer shadow-2xs"
                 >
-                  نسخة واحدة (1) للكل
+                  نسخة واحدة (1) لكل كود (الافتراضي)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSetAllToStock}
+                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 text-slate-600 rounded-lg font-bold transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <Package className="w-3.5 h-3.5 text-slate-500" />
+                  <span>تكرار حسب رصيد المخزن</span>
                 </button>
               </div>
 
-              <div className="text-[11px] text-slate-500">
-                {printMode === 'thermal'
-                  ? 'نمط الطابعة الحرارية: سيتم إرسال كل ملصق بمفرده مع فاصل صفحة (Page Break)'
-                  : 'نمط A4: سيتم ترتيب الملصقات في شبكة جاهزة للطباعة والقص'}
+              <div className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
+                {printMode === 'normal'
+                  ? 'الطباعة العادية: كل كود QR سيتم طباعته على صفحة مستقلة A4 بمفرده بجودة عالية'
+                  : printMode === 'thermal'
+                  ? 'طابعة حرارية: استيكر رول فردي لكل قطعة'
+                  : 'شبكة A4: ملصقات مجمعة ومقسمة على شبكة للقص'}
               </div>
             </div>
           </div>
@@ -386,7 +398,7 @@ export default function QrLabelsPage() {
 
                     {/* Copy Count Controller */}
                     <div className="flex items-center justify-between bg-slate-50 p-1.5 rounded-xl border border-slate-200">
-                      <span className="text-[10px] font-bold text-slate-600">نسخ الطباعة:</span>
+                      <span className="text-[10px] font-bold text-slate-600">صفحات/نسخ:</span>
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
@@ -414,17 +426,6 @@ export default function QrLabelsPage() {
                         </button>
                       </div>
                     </div>
-
-                    {/* Quick reset to stock if different */}
-                    {stock > 0 && copyCount !== stock && (
-                      <button
-                        type="button"
-                        onClick={() => updateCopies(label.variant_id, stock)}
-                        className="w-full text-center text-[10px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
-                      >
-                        طباعة رصيد المخزن ({stock} استيكر)
-                      </button>
-                    )}
                   </div>
 
                   {/* UID/SKU Bar */}
@@ -439,7 +440,91 @@ export default function QrLabelsPage() {
 
         {/* PRINT ONLY RENDER AREA */}
         <div className="hidden print:block">
-          {printMode === 'thermal' ? (
+          {printMode === 'normal' ? (
+            /* NORMAL PRINTING MODE: Each QR code on its own full page alone */
+            <div className="normal-print-container">
+              {printableItems.map((item, index) => (
+                <div
+                  key={`normal-${item.variant_id}-${index}`}
+                  className="normal-single-page-label"
+                >
+                  <div className="normal-label-card">
+                    {/* Header */}
+                    <div className="normal-label-header">
+                      <div className="text-base font-black text-slate-900 tracking-wide">
+                        مؤسسة زين لملابس الأطفال بالجملة
+                      </div>
+                      <div className="text-xs font-bold text-slate-500 mt-0.5">
+                        بطاقة تعريف الصنف والموقع المخزني
+                      </div>
+                    </div>
+
+                    {/* Meta Bar: Model Code & Shelf */}
+                    <div className="normal-label-meta-bar">
+                      <div className="normal-model-code">
+                        {item.model_code}
+                      </div>
+                      {item.shelf_code ? (
+                        <div className="normal-shelf-badge">
+                          رف: {item.shelf_code}
+                        </div>
+                      ) : (
+                        <div className="normal-shelf-badge-empty">
+                          المخزن الرئيسي
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Product Name */}
+                    <div className="normal-product-name">
+                      {item.model_name}
+                    </div>
+
+                    {/* Color & Size Specs */}
+                    <div className="normal-variant-details">
+                      <span className="detail-pill">
+                        اللون: <strong>{item.color_name}</strong>
+                      </span>
+                      <span className="detail-pill">
+                        المقاس: <strong>{item.size_name}</strong>
+                      </span>
+                      {item.default_price > 0 && (
+                        <span className="detail-pill price-pill">
+                          السعر: <strong>{item.default_price} ج.م</strong>
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Huge Scannable QR Code */}
+                    <div className="normal-qr-wrapper">
+                      <img
+                        src={item.qr_data_url}
+                        alt={item.qr_code_uid}
+                        className="normal-qr-image"
+                      />
+                    </div>
+
+                    {/* Footer with UID & SKU */}
+                    <div className="normal-label-footer">
+                      <div className="font-mono text-sm font-black text-slate-900 dir-ltr tracking-wider">
+                        {item.qr_code_uid}
+                      </div>
+                      {item.sku && (
+                        <div className="font-mono text-xs text-slate-600 dir-ltr">
+                          SKU: {item.sku}
+                        </div>
+                      )}
+                      {item.totalCopies > 1 && (
+                        <div className="text-xs text-slate-500 font-bold mt-1">
+                          نسخة {item.copyIndex} من {item.totalCopies}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : printMode === 'thermal' ? (
             /* THERMAL PRINTER MODE: Each sticker on its own single page alone */
             <div className="thermal-print-container">
               {printableItems.map((item, index) => (
@@ -549,15 +634,15 @@ export default function QrLabelsPage() {
       <style jsx global>{`
         @media print {
           @page {
-            size: auto;
-            margin: 0mm;
+            size: A4 portrait;
+            margin: 10mm;
           }
           body {
             background: white !important;
             color: black !important;
             padding: 0 !important;
             margin: 0 !important;
-            font-family: sans-serif !important;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
           }
           header,
           aside,
@@ -567,6 +652,133 @@ export default function QrLabelsPage() {
           input,
           .print\\:hidden {
             display: none !important;
+          }
+
+          /* NORMAL SINGLE-PAGE FORMAT: Exactly 1 QR Code on each page */
+          .normal-print-container {
+            display: block !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          .normal-single-page-label {
+            page-break-after: always !important;
+            break-after: page !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            width: 100% !important;
+            min-height: 80vh !important;
+            max-height: 250mm !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: center !important;
+            box-sizing: border-box !important;
+            padding: 5mm !important;
+            margin: 0 auto !important;
+          }
+          .normal-single-page-label:last-child {
+            page-break-after: auto !important;
+            break-after: auto !important;
+          }
+          .normal-label-card {
+            width: 100% !important;
+            max-width: 165mm !important;
+            border: 3px solid #0f172a !important;
+            border-radius: 8mm !important;
+            padding: 8mm 10mm !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            text-align: center !important;
+            box-sizing: border-box !important;
+            background: #ffffff !important;
+          }
+          .normal-label-header {
+            border-bottom: 2px solid #e2e8f0 !important;
+            padding-bottom: 3mm !important;
+            margin-bottom: 4mm !important;
+            width: 100% !important;
+            text-align: center !important;
+          }
+          .normal-label-meta-bar {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            width: 100% !important;
+            margin-bottom: 3mm !important;
+          }
+          .normal-model-code {
+            font-family: monospace, ui-monospace, sans-serif !important;
+            font-weight: 900 !important;
+            font-size: 26pt !important;
+            line-height: 1 !important;
+            color: #000000 !important;
+            letter-spacing: 1px !important;
+          }
+          .normal-shelf-badge {
+            font-family: monospace, ui-monospace, sans-serif !important;
+            font-weight: 900 !important;
+            font-size: 14pt !important;
+            color: #000000 !important;
+            border: 2px solid #000000 !important;
+            padding: 1.5mm 4mm !important;
+            border-radius: 2.5mm !important;
+          }
+          .normal-shelf-badge-empty {
+            font-size: 10pt !important;
+            color: #64748b !important;
+            border: 1px dashed #cbd5e1 !important;
+            padding: 1mm 3mm !important;
+            border-radius: 2.5mm !important;
+          }
+          .normal-product-name {
+            font-size: 15pt !important;
+            font-weight: 800 !important;
+            color: #0f172a !important;
+            margin-bottom: 3mm !important;
+            max-width: 100% !important;
+          }
+          .normal-variant-details {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 3mm !important;
+            margin-bottom: 4mm !important;
+          }
+          .detail-pill {
+            font-size: 11pt !important;
+            border: 1.5px solid #cbd5e1 !important;
+            padding: 1mm 4mm !important;
+            border-radius: 3mm !important;
+            background: #f8fafc !important;
+            color: #0f172a !important;
+          }
+          .price-pill {
+            border-color: #0f172a !important;
+            background: #f1f5f9 !important;
+            font-weight: 900 !important;
+          }
+          .normal-qr-wrapper {
+            margin: 2mm 0 4mm 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+          }
+          .normal-qr-image {
+            width: 65mm !important;
+            height: 65mm !important;
+            object-fit: contain !important;
+          }
+          .normal-label-footer {
+            border-top: 2px solid #e2e8f0 !important;
+            padding-top: 3mm !important;
+            width: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            gap: 1mm !important;
           }
 
           /* THERMAL PRINTER FORMAT: 1 sticker alone per page */
