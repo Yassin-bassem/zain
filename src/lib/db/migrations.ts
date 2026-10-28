@@ -399,4 +399,10 @@ export async function runMigrations(client: DbClient): Promise<void> {
       [perm.role, perm.key, perm.allowed]
     );
   }
+
+  // 10. Customers store_name column
+  await client.execute(`
+    ALTER TABLE customers 
+    ADD COLUMN IF NOT EXISTS store_name VARCHAR(255);
+  `);
 }

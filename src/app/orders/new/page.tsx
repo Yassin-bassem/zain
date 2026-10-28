@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/layout/AppShell';
@@ -17,13 +17,26 @@ import {
   Warehouse,
   Tag,
   DollarSign,
+  Store,
+  Phone,
+  User,
+  MapPin,
+  X,
+  Edit2,
 } from 'lucide-react';
 
 export default function NewOrderPage() {
   const router = useRouter();
 
+  // Customer state & search
   const [customers, setCustomers] = useState<any[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+  const [customerSearch, setCustomerSearch] = useState<string>('');
+  const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
+  const [customerSearching, setCustomerSearching] = useState(false);
+  const customerDropdownRef = useRef<HTMLDivElement>(null);
+
   const [orderDate, setOrderDate] = useState('');
   const [notes, setNotes] = useState('');
   const [orderDiscount, setOrderDiscount] = useState('0');
@@ -51,6 +64,7 @@ export default function NewOrderPage() {
 
   // Quick Customer Create Modal
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  const [newCustStoreName, setNewCustStoreName] = useState('');
   const [newCustName, setNewCustName] = useState('');
   const [newCustPhone, setNewCustPhone] = useState('');
   const [newCustAddress, setNewCustAddress] = useState('');
@@ -65,6 +79,63 @@ export default function NewOrderPage() {
       .then((d) => setCustomers(d.customers || []))
       .catch((err) => console.error(err));
   }, []);
+
+  // Close customer dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        customerDropdownRef.current &&
+        !customerDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsCustomerDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Server search debouncer for customers
+  useEffect(() => {
+    if (!customerSearch.trim()) return;
+
+    const timer = setTimeout(async () => {
+      setCustomerSearching(true);
+      try {
+        const res = await fetch(
+          `/api/customers?search=${encodeURIComponent(customerSearch.trim())}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.customers)) {
+            setCustomers((prev) => {
+              const map = new Map(prev.map((c) => [c.id, c]));
+              data.customers.forEach((c: any) => map.set(c.id, c));
+              return Array.from(map.values());
+            });
+          }
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setCustomerSearching(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [customerSearch]);
+
+  // In-memory filtered customers list matching name, store name, phone, alternate phone, customer code, or address
+  const filteredCustomers = customers.filter((c) => {
+    if (!customerSearch.trim()) return true;
+    const q = customerSearch.trim().toLowerCase();
+    const nameMatch = (c.name || '').toLowerCase().includes(q);
+    const storeMatch = (c.store_name || '').toLowerCase().includes(q);
+    const phoneMatch =
+      (c.phone || '').includes(q) || (c.alternate_phone || '').includes(q);
+    const codeMatch = (c.customer_code || '').toLowerCase().includes(q);
+    const addressMatch = (c.address || '').toLowerCase().includes(q);
+    return nameMatch || storeMatch || phoneMatch || codeMatch || addressMatch;
+  });
 
   // Search variants
   useEffect(() => {
@@ -127,27 +198,45 @@ export default function NewOrderPage() {
     setItems(items.filter((_, idx) => idx !== index));
   };
 
+  const handleSelectCustomer = (customer: any) => {
+    setSelectedCustomer(customer);
+    setSelectedCustomerId(String(customer.id));
+    setCustomerSearch('');
+    setIsCustomerDropdownOpen(false);
+    setError('');
+  };
+
+  const handleClearSelectedCustomer = () => {
+    setSelectedCustomer(null);
+    setSelectedCustomerId('');
+    setCustomerSearch('');
+    setIsCustomerDropdownOpen(false);
+  };
+
   const handleQuickCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCustName || !newCustPhone) return;
+    if (!newCustName.trim() || !newCustPhone.trim()) return;
 
     try {
       const res = await fetch('/api/customers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: newCustName,
-          phone: newCustPhone,
-          address: newCustAddress,
+          name: newCustName.trim(),
+          store_name: newCustStoreName.trim() || null,
+          phone: newCustPhone.trim(),
+          address: newCustAddress.trim() || null,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'فشل إضافة العميل');
 
-      setCustomers([...customers, data.customer]);
-      setSelectedCustomerId(String(data.customer.id));
+      const created = data.customer;
+      setCustomers((prev) => [created, ...prev]);
+      handleSelectCustomer(created);
       setIsCustomerModalOpen(false);
+      setNewCustStoreName('');
       setNewCustName('');
       setNewCustPhone('');
       setNewCustAddress('');
@@ -250,50 +339,208 @@ export default function NewOrderPage() {
 
         {/* Customer & Order Header */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-            {/* Customer Picker */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="font-bold text-slate-700">العميل (محل / تاجر) *</label>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 text-xs">
+            {/* Searchable Customer Picker with Name, Store Name, and Phone Search */}
+            <div className="lg:col-span-6 relative" ref={customerDropdownRef}>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <Store className="w-4 h-4 text-indigo-600" />
+                  <span>العميل (البحث بالاسم، اسم المحل، أو رقم الموبايل) *</span>
+                </label>
                 <button
                   type="button"
-                  onClick={() => setIsCustomerModalOpen(true)}
-                  className="text-indigo-600 font-bold hover:underline flex items-center gap-1"
+                  onClick={() => {
+                    setNewCustStoreName(customerSearch.trim());
+                    setNewCustName('');
+                    setNewCustPhone('');
+                    setIsCustomerModalOpen(true);
+                  }}
+                  className="text-indigo-600 font-bold hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
-                  <span>إضافة عميل جديد</span>
+                  <span>+ إضافة عميل / محل جديد</span>
                 </button>
               </div>
-              <select
-                required
-                value={selectedCustomerId}
-                onChange={(e) => setSelectedCustomerId(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-slate-900 font-bold focus:bg-white focus:border-indigo-500"
-              >
-                <option value="">-- اضغط لاختيار العميل --</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.phone})
-                  </option>
-                ))}
-              </select>
+
+              {selectedCustomer ? (
+                /* Selected Customer Display Card */
+                <div className="bg-gradient-to-r from-indigo-50/90 via-white to-emerald-50/80 border-2 border-indigo-400 rounded-xl p-3 flex items-center justify-between gap-3 shadow-2xs">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                      <Store className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {selectedCustomer.store_name ? (
+                          <>
+                            <span className="font-black text-sm text-slate-900">
+                              {selectedCustomer.store_name}
+                            </span>
+                            <span className="text-slate-400 font-bold">•</span>
+                            <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                              <User className="w-3 h-3 text-slate-400" />
+                              {selectedCustomer.name}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="font-black text-sm text-slate-900">
+                            {selectedCustomer.name}
+                          </span>
+                        )}
+                        {selectedCustomer.customer_code && (
+                          <span className="font-mono text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded font-bold">
+                            {selectedCustomer.customer_code}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 mt-1">
+                        <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
+                          <Phone className="w-3 h-3 text-emerald-600" />
+                          {selectedCustomer.phone}
+                        </span>
+                        {selectedCustomer.alternate_phone && (
+                          <span className="font-mono text-slate-500">
+                            / {selectedCustomer.alternate_phone}
+                          </span>
+                        )}
+                        {selectedCustomer.address && (
+                          <span className="truncate flex items-center gap-1 text-slate-500">
+                            <MapPin className="w-3 h-3 text-slate-400" />
+                            {selectedCustomer.address}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleClearSelectedCustomer}
+                    className="px-3 py-1.5 bg-white hover:bg-slate-100 text-rose-700 border border-slate-300 rounded-lg font-bold text-xs flex items-center gap-1 transition-all cursor-pointer shadow-2xs shrink-0"
+                    title="تغيير العميل والبحث عن عميل آخر"
+                  >
+                    <span>تغيير</span>
+                    <X className="w-3.5 h-3.5 text-rose-500" />
+                  </button>
+                </div>
+              ) : (
+                /* Customer Search Input & Results Dropdown */
+                <div className="relative">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={customerSearch}
+                      onChange={(e) => {
+                        setCustomerSearch(e.target.value);
+                        setIsCustomerDropdownOpen(true);
+                      }}
+                      onFocus={() => setIsCustomerDropdownOpen(true)}
+                      placeholder="ابحث باسم المحل (مثال: كيدز شوب)، اسم العميل، أو رقم الموبايل..."
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 pr-10 text-xs font-bold text-slate-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all shadow-2xs"
+                    />
+                    <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-3" />
+                    {customerSearching && (
+                      <Loader2 className="w-4 h-4 animate-spin text-indigo-600 absolute left-3.5 top-3" />
+                    )}
+                  </div>
+
+                  {/* Dropdown Results */}
+                  {isCustomerDropdownOpen && (
+                    <div className="absolute top-full left-0 right-0 mt-1 z-30 bg-white border border-slate-300 rounded-xl shadow-xl max-h-64 overflow-y-auto divide-y divide-slate-100">
+                      {filteredCustomers.length > 0 ? (
+                        filteredCustomers.slice(0, 25).map((c) => (
+                          <div
+                            key={c.id}
+                            onClick={() => handleSelectCustomer(c)}
+                            className="p-3 hover:bg-indigo-50/80 transition-colors cursor-pointer flex items-center justify-between text-right gap-2"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-black text-xs text-slate-900 flex items-center gap-1">
+                                  <Store className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                  <span>{c.store_name ? c.store_name : c.name}</span>
+                                </span>
+                                {c.store_name && c.name && (
+                                  <span className="text-[11px] text-slate-600 font-bold flex items-center gap-0.5">
+                                    <User className="w-3 h-3 text-slate-400" />
+                                    <span>{c.name}</span>
+                                  </span>
+                                )}
+                                {c.customer_code && (
+                                  <span className="font-mono text-[9px] text-slate-500 bg-slate-100 px-1 py-0.2 rounded font-bold">
+                                    {c.customer_code}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 text-[11px] text-slate-600 mt-1">
+                                <span className="font-mono font-bold text-emerald-700 flex items-center gap-1">
+                                  <Phone className="w-3 h-3 text-emerald-500" />
+                                  {c.phone}
+                                </span>
+                                {c.alternate_phone && (
+                                  <span className="font-mono text-slate-400">
+                                    / {c.alternate_phone}
+                                  </span>
+                                )}
+                                {c.address && (
+                                  <span className="truncate flex items-center gap-1 text-slate-500">
+                                    <MapPin className="w-3 h-3 text-slate-400" />
+                                    {c.address}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              className="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white rounded-lg text-[11px] font-black transition-all shrink-0 cursor-pointer"
+                            >
+                              اختيار
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-4 text-center text-xs space-y-2">
+                          <p className="text-slate-500 font-bold">
+                            لم يتم العثور على عميل أو محل مطابق لـ &quot;{customerSearch}&quot;
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNewCustStoreName(customerSearch.trim());
+                              setNewCustName('');
+                              setNewCustPhone('');
+                              setIsCustomerModalOpen(true);
+                              setIsCustomerDropdownOpen(false);
+                            }}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs transition-colors cursor-pointer"
+                          >
+                            <UserPlus className="w-3.5 h-3.5" />
+                            <span>+ إضافة &quot;{customerSearch}&quot; كعميل جديد الآن</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Date */}
-            <div>
+            <div className="lg:col-span-3">
               <label className="block font-bold text-slate-700 mb-1">تاريخ الطلب *</label>
               <input
                 type="date"
                 required
                 value={orderDate}
                 onChange={(e) => setOrderDate(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-900 focus:bg-white focus:border-indigo-500"
-              >
-              </input>
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-900 focus:bg-white focus:border-indigo-500 font-bold"
+              />
             </div>
 
             {/* Notes */}
-            <div>
+            <div className="lg:col-span-3">
               <label className="block font-bold text-slate-700 mb-1">ملاحظات الطلب أو الشحن</label>
               <input
                 type="text"
@@ -537,8 +784,9 @@ export default function NewOrderPage() {
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="font-black text-slate-900 text-base">إضافة عميل / محل ملابس جديد</h3>
               <button
+                type="button"
                 onClick={() => setIsCustomerModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold"
+                className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
               >
                 ✕
               </button>
@@ -546,26 +794,37 @@ export default function NewOrderPage() {
 
             <form onSubmit={handleQuickCreateCustomer} className="space-y-3 text-xs">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">اسم العميل / المحل *</label>
+                <label className="block font-bold text-slate-700 mb-1">اسم المحل / المتجر (Store Name)</label>
+                <input
+                  type="text"
+                  value={newCustStoreName}
+                  onChange={(e) => setNewCustStoreName(e.target.value)}
+                  placeholder="مثال: محل كيدز فاشون للأطفال"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-900 focus:bg-white focus:border-indigo-500 font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">اسم العميل / المسؤول *</label>
                 <input
                   type="text"
                   required
                   value={newCustName}
                   onChange={(e) => setNewCustName(e.target.value)}
-                  placeholder="مثال: محل الأمير لملابس الأطفال"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-900 focus:bg-white focus:border-indigo-500"
+                  placeholder="مثال: أحمد عبد الله"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-900 focus:bg-white focus:border-indigo-500 font-bold"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">رقم الهاتف *</label>
+                <label className="block font-bold text-slate-700 mb-1">رقم الموبايل *</label>
                 <input
                   type="text"
                   required
                   value={newCustPhone}
                   onChange={(e) => setNewCustPhone(e.target.value)}
                   placeholder="01012345678"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-900 focus:bg-white focus:border-indigo-500"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-900 focus:bg-white focus:border-indigo-500 font-bold font-mono"
                 />
               </div>
 
@@ -584,15 +843,15 @@ export default function NewOrderPage() {
                 <button
                   type="button"
                   onClick={() => setIsCustomerModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-bold"
+                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-bold cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold cursor-pointer shadow-xs"
                 >
-                  حفظ العميل
+                  حفظ واختيار العميل فوراً
                 </button>
               </div>
             </form>

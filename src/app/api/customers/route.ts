@@ -15,7 +15,14 @@ export async function GET(req: NextRequest) {
       customers = await query(
         `SELECT c.*, (SELECT COUNT(*) FROM sales_orders so WHERE so.customer_id = c.id) as orders_count
          FROM customers c
-         WHERE c.active = true AND (c.name ILIKE $1 OR c.phone ILIKE $1 OR c.customer_code ILIKE $1)
+         WHERE c.active = true AND (
+           c.name ILIKE $1 
+           OR COALESCE(c.store_name, '') ILIKE $1 
+           OR c.phone ILIKE $1 
+           OR COALESCE(c.alternate_phone, '') ILIKE $1 
+           OR c.customer_code ILIKE $1
+           OR COALESCE(c.address, '') ILIKE $1
+         )
          ORDER BY c.name ASC`,
         [`%${search.trim()}%`]
       );
@@ -39,7 +46,7 @@ export async function POST(req: NextRequest) {
   if (auth.response) return auth.response;
 
   try {
-    const { name, phone, alternate_phone, address, notes } = await req.json();
+    const { name, store_name, phone, alternate_phone, address, notes } = await req.json();
 
     if (!name || !phone) {
       return NextResponse.json({ error: 'اسم العميل ورقم الهاتف مطلوبان.' }, { status: 400 });
@@ -48,15 +55,29 @@ export async function POST(req: NextRequest) {
     const customerCode = `CUST-${Date.now().toString().slice(-5)}`;
 
     const res = await query<{ id: number }>(
-      `INSERT INTO customers (customer_code, name, phone, alternate_phone, address, notes, active)
-       VALUES ($1, $2, $3, $4, $5, $6, true)
+      `INSERT INTO customers (customer_code, name, store_name, phone, alternate_phone, address, notes, active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true)
        RETURNING id`,
-      [customerCode, name.trim(), phone.trim(), alternate_phone?.trim() || null, address?.trim() || null, notes?.trim() || null]
+      [
+        customerCode,
+        name.trim(),
+        store_name?.trim() || null,
+        phone.trim(),
+        alternate_phone?.trim() || null,
+        address?.trim() || null,
+        notes?.trim() || null,
+      ]
     );
 
     return NextResponse.json({
       success: true,
-      customer: { id: res[0].id, customer_code: customerCode, name, phone },
+      customer: {
+        id: res[0].id,
+        customer_code: customerCode,
+        name,
+        store_name: store_name?.trim() || null,
+        phone,
+      },
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 400 });
