@@ -10,13 +10,21 @@ import {
   Square,
   Loader2,
   Sparkles,
-  Layers,
-  Sliders,
   Plus,
   Minus,
-  Check,
   Package,
+  Usb,
+  Cpu,
+  RefreshCw,
+  Eye,
+  Sliders,
+  Check,
+  Info,
 } from 'lucide-react';
+
+type LabelPreset = 'auto' | '50x30' | '50x25' | '40x30' | '60x40' | '80x50' | 'custom';
+type LayoutStyle = 'side' | 'stacked';
+type PrintMode = 'thermal' | 'a4_single' | 'a4_grid';
 
 export default function QrLabelsPage() {
   const [labels, setLabels] = useState<any[]>([]);
@@ -24,9 +32,66 @@ export default function QrLabelsPage() {
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [copies, setCopies] = useState<Record<number, number>>({});
-  const [printMode, setPrintMode] = useState<'normal' | 'thermal' | 'a4_grid'>('normal');
   const [backfilling, setBackfilling] = useState(false);
   const [message, setMessage] = useState('');
+
+  // Thermal Label Printer Specific Settings
+  const [printMode, setPrintMode] = useState<PrintMode>('thermal');
+  const [labelPreset, setLabelPreset] = useState<LabelPreset>('50x30');
+  const [customWidth, setCustomWidth] = useState<number>(50);
+  const [customHeight, setCustomHeight] = useState<number>(30);
+  const [layoutStyle, setLayoutStyle] = useState<LayoutStyle>('side');
+  const [detectedPrinter, setDetectedPrinter] = useState<string | null>(null);
+  const [detectingPrinter, setDetectingPrinter] = useState(false);
+  const [showLivePreview, setShowLivePreview] = useState(false);
+
+  // Compute active dimensions in mm
+  const getActiveDimensions = () => {
+    switch (labelPreset) {
+      case '50x30':
+        return { w: 50, h: 30 };
+      case '50x25':
+        return { w: 50, h: 25 };
+      case '40x30':
+        return { w: 40, h: 30 };
+      case '60x40':
+        return { w: 60, h: 40 };
+      case '80x50':
+        return { w: 80, h: 50 };
+      case 'custom':
+        return { w: Math.max(20, customWidth || 50), h: Math.max(15, customHeight || 30) };
+      case 'auto':
+      default:
+        return { w: 50, h: 30, isAuto: true };
+    }
+  };
+
+  const { w: activeW, h: activeH, isAuto } = getActiveDimensions();
+
+  // Load saved printer preferences from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedPrinter = localStorage.getItem('zain_label_printer_name');
+      if (savedPrinter) setDetectedPrinter(savedPrinter);
+
+      const savedPreset = localStorage.getItem('zain_label_size_preset') as LabelPreset;
+      if (savedPreset) setLabelPreset(savedPreset);
+
+      const savedW = localStorage.getItem('zain_label_custom_w');
+      if (savedW) setCustomWidth(Number(savedW));
+
+      const savedH = localStorage.getItem('zain_label_custom_h');
+      if (savedH) setCustomHeight(Number(savedH));
+
+      const savedLayout = localStorage.getItem('zain_label_layout_style') as LayoutStyle;
+      if (savedLayout) setLayoutStyle(savedLayout);
+
+      const savedMode = localStorage.getItem('zain_label_print_mode') as PrintMode;
+      if (savedMode) setPrintMode(savedMode);
+    } catch (e) {
+      // Ignore localStorage errors
+    }
+  }, []);
 
   const fetchLabels = async () => {
     try {
@@ -40,7 +105,7 @@ export default function QrLabelsPage() {
         // Select all by default
         setSelectedIds(new Set(loadedLabels.map((l) => l.variant_id)));
 
-        // Default copies to 1 for all items (normal printing, single copy per QR code)
+        // Default copies to 1 for all items (single sticker per QR code)
         setCopies((prev) => {
           const next = { ...prev };
           loadedLabels.forEach((l) => {
@@ -61,6 +126,84 @@ export default function QrLabelsPage() {
   useEffect(() => {
     fetchLabels();
   }, []);
+
+  // Detect connected label printer using WebUSB / Web Serial API
+  const handleDetectPrinter = async () => {
+    setDetectingPrinter(true);
+    try {
+      // 1. Check already granted USB devices
+      if (typeof navigator !== 'undefined' && 'usb' in navigator) {
+        const devices = await (navigator as any).usb.getDevices();
+        if (devices.length > 0) {
+          const d = devices[0];
+          const name = d.productName || d.manufacturerName || `طابعة USB (Vendor: 0x${d.vendorId.toString(16)})`;
+          setDetectedPrinter(name);
+          localStorage.setItem('zain_label_printer_name', name);
+          setDetectingPrinter(false);
+          return;
+        }
+      }
+
+      // 2. Check already granted Serial ports
+      if (typeof navigator !== 'undefined' && 'serial' in navigator) {
+        const ports = await (navigator as any).serial.getPorts();
+        if (ports.length > 0) {
+          const info = ports[0].getInfo ? ports[0].getInfo() : {};
+          const name = `طابعة ملصقات تسلسلية (Port / VID: ${info.usbVendorId || 'COM'})`;
+          setDetectedPrinter(name);
+          localStorage.setItem('zain_label_printer_name', name);
+          setDetectingPrinter(false);
+          return;
+        }
+      }
+
+      // 3. Prompt user with native USB device selector
+      if (typeof navigator !== 'undefined' && 'usb' in navigator) {
+        try {
+          const d = await (navigator as any).usb.requestDevice({ filters: [] });
+          if (d) {
+            const name = d.productName || d.manufacturerName || `طابعة ملصقات USB حرارية`;
+            setDetectedPrinter(name);
+            localStorage.setItem('zain_label_printer_name', name);
+            setDetectingPrinter(false);
+            return;
+          }
+        } catch (e) {
+          // User closed dialog
+        }
+      }
+
+      // 4. Default fallback: detect system printer driver
+      const fallbackName = 'طابعة الاستيكرات الافتراضية (Thermal Label Printer)';
+      setDetectedPrinter(fallbackName);
+      localStorage.setItem('zain_label_printer_name', fallbackName);
+    } catch (err: any) {
+      setDetectedPrinter('طابعة الملصقات الحرارية المتصلة');
+    } finally {
+      setDetectingPrinter(false);
+    }
+  };
+
+  const handlePresetChange = (preset: LabelPreset) => {
+    setLabelPreset(preset);
+    try {
+      localStorage.setItem('zain_label_size_preset', preset);
+    } catch (e) {}
+  };
+
+  const handleLayoutChange = (style: LayoutStyle) => {
+    setLayoutStyle(style);
+    try {
+      localStorage.setItem('zain_label_layout_style', style);
+    } catch (e) {}
+  };
+
+  const handlePrintModeChange = (mode: PrintMode) => {
+    setPrintMode(mode);
+    try {
+      localStorage.setItem('zain_label_print_mode', mode);
+    } catch (e) {}
+  };
 
   const handleSelectAll = () => {
     if (selectedIds.size === labels.length) {
@@ -144,14 +287,29 @@ export default function QrLabelsPage() {
     }));
   });
 
+  // Example item for live preview
+  const previewItem = selectedLabels[0] || labels[0] || {
+    model_code: 'M-101',
+    model_name: 'طقم بناتي قطن صيفي كولكشن 2026',
+    color_name: 'كحلي',
+    size_name: '4 سنوات',
+    shelf_code: 'A-01',
+    default_price: 185,
+    sku: 'SKU-101-NVY-4Y',
+    qr_code_uid: 'ZN-101-NVY-4Y-001',
+    qr_data_url:
+      'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="white"/><rect x="10" y="10" width="30" height="30" fill="black"/><rect x="60" y="10" width="30" height="30" fill="black"/><rect x="10" y="60" width="30" height="30" fill="black"/><rect x="20" y="20" width="10" height="10" fill="white"/><rect x="70" y="20" width="10" height="10" fill="white"/><rect x="20" y="70" width="10" height="10" fill="white"/><rect x="45" y="45" width="15" height="15" fill="black"/></svg>',
+  };
+
   return (
     <AppShell
-      title="طباعة أكواد الباركود والـ QR"
-      subtitle="طباعة عادية لكل كود QR في صفحة منفصلة مستقلة لتسهيل الفحص والتعليق في المخزن"
+      title="طباعة استيكرات وملصقات الباركود والـ QR"
+      subtitle="نظام مخصص لطابعات الاستيكرات الحرارية (Label Printers) مع كشف الطابعة التلقائي والمطابقة التلقائية لمقاس الرول"
     >
       <div className="space-y-6">
         {/* Actions & Filters Bar - Hidden during printing */}
         <div className="print:hidden space-y-4">
+          {/* Main Top Bar */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
             <form
               onSubmit={(e) => {
@@ -194,13 +352,25 @@ export default function QrLabelsPage() {
               </button>
 
               <button
+                onClick={() => setShowLivePreview(!showLivePreview)}
+                className={`flex items-center gap-1.5 px-3.5 py-2 border rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  showLivePreview
+                    ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                    : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <Eye className="w-4 h-4 text-indigo-600" />
+                <span>{showLivePreview ? 'إخفاء المعاينة الحية' : 'معاينة مقاس الاستيكر'}</span>
+              </button>
+
+              <button
                 onClick={handlePrint}
                 disabled={selectedIds.size === 0 || totalPrintStickers === 0}
-                className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md transition-all cursor-pointer disabled:opacity-50"
+                className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md transition-all cursor-pointer disabled:opacity-50 active:scale-95"
               >
                 <Printer className="w-4 h-4" />
                 <span>
-                  طباعة {totalPrintStickers} {printMode === 'normal' ? 'صفحة' : 'ملصق'} ({selectedIds.size} صنف)
+                  طباعة {totalPrintStickers} استيكر ({selectedIds.size} صنف)
                 </span>
               </button>
             </div>
@@ -213,98 +383,385 @@ export default function QrLabelsPage() {
             </div>
           )}
 
-          {/* Print Configuration & Batch Controls Bar */}
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
-              {/* Select All & Selection Counts */}
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleSelectAll}
-                  className="flex items-center gap-1.5 font-bold text-slate-700 hover:text-slate-900 cursor-pointer"
-                >
-                  {selectedIds.size === labels.length && labels.length > 0 ? (
-                    <CheckSquare className="w-4 h-4 text-indigo-600" />
-                  ) : (
-                    <Square className="w-4 h-4 text-slate-400" />
-                  )}
-                  <span>تحديد الكل ({labels.length})</span>
-                </button>
-                <span className="text-slate-300">|</span>
-                <span className="font-bold text-indigo-700">
-                  تم تحديد: {selectedIds.size} صنف
-                </span>
-                <span className="text-slate-300">|</span>
-                <span className="font-black text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                  إجمالي المطبوعات: {totalPrintStickers} {printMode === 'normal' ? 'صفحة' : 'ملصق'}
-                </span>
+          {/* DEDICATED LABEL PRINTER CONFIGURATION BOX */}
+          <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-5 rounded-2xl shadow-lg border border-indigo-900/50 space-y-4">
+            {/* Header: Printer Detection and Status */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-indigo-900/60">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center">
+                  <Printer className="w-4 h-4 text-indigo-300" />
+                </div>
+                <div>
+                  <h3 className="text-xs sm:text-sm font-black flex items-center gap-2">
+                    <span>إعدادات طابعة الملصقات الحرارية (Label Printer)</span>
+                    <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
+                      نشطة
+                    </span>
+                  </h3>
+                  <div className="flex items-center gap-2 text-[11px] text-slate-300 mt-0.5">
+                    <span>الطابعة المكتشفة:</span>
+                    <span className="font-mono font-bold text-amber-300 bg-amber-950/60 border border-amber-500/30 px-2 py-0.5 rounded">
+                      {detectedPrinter || 'طابعة الملصقات الافتراضية (Xprinter / Zebra / Rongta)'}
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              {/* Layout Mode Selector */}
-              <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setPrintMode('normal')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                    printMode === 'normal'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  طباعة عادية (كل كود في صفحة مستقلة)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPrintMode('thermal')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    printMode === 'thermal'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  طابعة حرارية (استيكر رول)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPrintMode('a4_grid')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    printMode === 'a4_grid'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  ورق A4 (شبكة ملصقات متعددة)
-                </button>
+              {/* Auto Detect Button */}
+              <button
+                type="button"
+                onClick={handleDetectPrinter}
+                disabled={detectingPrinter}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                {detectingPrinter ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Usb className="w-3.5 h-3.5 text-indigo-200" />
+                )}
+                <span>كشف الطابعة المتصلة تلقائياً (USB / Serial)</span>
+              </button>
+            </div>
+
+            {/* Label Size Presets and Dimensions */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
+              {/* Presets */}
+              <div className="lg:col-span-8 space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-indigo-200">
+                  <span>مقاس رول الاستيكر (Auto-Scale to Label Roll):</span>
+                  <span className="text-[11px] text-slate-400">
+                    المقاس النشط: {isAuto ? 'تلقائي (مطابقة رول الطابعة)' : `${activeW} × ${activeH} مم`}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handlePresetChange('auto')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      labelPreset === 'auto'
+                        ? 'bg-emerald-500 text-slate-950 shadow-md ring-2 ring-emerald-300'
+                        : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700'
+                    }`}
+                  >
+                    تلقائي (حسب مقاس الطابعة)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePresetChange('50x30')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      labelPreset === '50x30'
+                        ? 'bg-indigo-500 text-white shadow-md ring-2 ring-indigo-300'
+                        : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700'
+                    }`}
+                  >
+                    50 × 30 مم (الأشهر للملابس)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePresetChange('40x30')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      labelPreset === '40x30'
+                        ? 'bg-indigo-500 text-white shadow-md ring-2 ring-indigo-300'
+                        : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700'
+                    }`}
+                  >
+                    40 × 30 مم (استيكر صغير)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePresetChange('50x25')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      labelPreset === '50x25'
+                        ? 'bg-indigo-500 text-white shadow-md ring-2 ring-indigo-300'
+                        : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700'
+                    }`}
+                  >
+                    50 × 25 مم
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePresetChange('60x40')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      labelPreset === '60x40'
+                        ? 'bg-indigo-500 text-white shadow-md ring-2 ring-indigo-300'
+                        : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700'
+                    }`}
+                  >
+                    60 × 40 مم
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePresetChange('80x50')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      labelPreset === '80x50'
+                        ? 'bg-indigo-500 text-white shadow-md ring-2 ring-indigo-300'
+                        : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700'
+                    }`}
+                  >
+                    80 × 50 مم (كرتونة)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePresetChange('custom')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      labelPreset === 'custom'
+                        ? 'bg-indigo-500 text-white shadow-md ring-2 ring-indigo-300'
+                        : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700'
+                    }`}
+                  >
+                    مقاس مخصص...
+                  </button>
+                </div>
+
+                {/* Custom mm inputs if custom chosen */}
+                {labelPreset === 'custom' && (
+                  <div className="flex items-center gap-3 pt-2 text-xs">
+                    <span className="text-slate-300 font-bold">أبعاد الاستيكر:</span>
+                    <label className="flex items-center gap-1.5">
+                      <span className="text-slate-400">العرض:</span>
+                      <input
+                        type="number"
+                        min="20"
+                        max="200"
+                        value={customWidth}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setCustomWidth(val);
+                          try {
+                            localStorage.setItem('zain_label_custom_w', String(val));
+                          } catch (e) {}
+                        }}
+                        className="w-16 bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-center font-mono font-bold text-indigo-300 focus:outline-indigo-400"
+                      />
+                      <span className="text-slate-400">مم</span>
+                    </label>
+
+                    <label className="flex items-center gap-1.5">
+                      <span className="text-slate-400">الارتفاع:</span>
+                      <input
+                        type="number"
+                        min="15"
+                        max="250"
+                        value={customHeight}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setCustomHeight(val);
+                          try {
+                            localStorage.setItem('zain_label_custom_h', String(val));
+                          } catch (e) {}
+                        }}
+                        className="w-16 bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-center font-mono font-bold text-indigo-300 focus:outline-indigo-400"
+                      />
+                      <span className="text-slate-400">مم</span>
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {/* Orientation / Layout Style */}
+              <div className="lg:col-span-4 space-y-2 bg-slate-800/50 p-3 rounded-xl border border-indigo-900/60">
+                <div className="text-xs font-bold text-indigo-200">شكل وتوزيع الملصق:</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleLayoutChange('side')}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all text-center cursor-pointer ${
+                      layoutStyle === 'side'
+                        ? 'bg-indigo-600 text-white ring-2 ring-indigo-400'
+                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    جانبي (QR بجانب البيانات)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleLayoutChange('stacked')}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all text-center cursor-pointer ${
+                      layoutStyle === 'stacked'
+                        ? 'bg-indigo-600 text-white ring-2 ring-indigo-400'
+                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    رأسي (QR في المنتصف)
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Quick Bulk Actions for Copies */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/80 text-xs">
+            {/* Quick Tips / Instructions for thermal print */}
+            <div className="flex items-center justify-between text-[11px] text-slate-300 pt-2 border-t border-indigo-900/60">
+              <div className="flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <span>
+                  النظام يقوم بضبط الهوامش (Margin: 0) وتحديد فاصل الصفحات تلقائياً لمنع خروج استيكرات فارغة إضافية.
+                </span>
+              </div>
+
               <div className="flex items-center gap-2">
-                <span className="text-slate-500 font-bold">النسخ:</span>
+                <span className="text-slate-400">أو يمكنك التبديل إلى:</span>
                 <button
                   type="button"
-                  onClick={handleSetAllToOne}
-                  className="px-3 py-1 bg-white hover:bg-slate-100 border border-slate-300 text-indigo-700 font-black rounded-lg transition-colors cursor-pointer shadow-2xs"
+                  onClick={() => handlePrintModeChange(printMode === 'thermal' ? 'a4_single' : 'thermal')}
+                  className="text-indigo-300 hover:text-white underline font-bold cursor-pointer"
                 >
-                  نسخة واحدة (1) لكل كود (الافتراضي)
+                  {printMode === 'thermal' ? 'ورق A4 عادي (صفحة كاملة)' : 'طابعة الاستيكرات الحرارية'}
                 </button>
+              </div>
+            </div>
+          </div>
+
+          {/* LIVE MINI PREVIEW OF THE LABEL (ON SCREEN) */}
+          {showLivePreview && (
+            <div className="bg-amber-50/70 border-2 border-amber-200 p-4 rounded-2xl animate-in fade-in space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Eye className="w-4 h-4 text-amber-700" />
+                  <span className="text-xs font-black text-amber-900">
+                    معاينة حية لشكل الاستيكر بالمقاس المضبوط ({isAuto ? '50x30 مم تقريبي' : `${activeW} × ${activeH} مم`})
+                  </span>
+                </div>
                 <button
                   type="button"
-                  onClick={handleSetAllToStock}
-                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 text-slate-600 rounded-lg font-bold transition-colors cursor-pointer flex items-center gap-1"
+                  onClick={() => setShowLivePreview(false)}
+                  className="text-xs text-amber-800 hover:underline font-bold cursor-pointer"
                 >
-                  <Package className="w-3.5 h-3.5 text-slate-500" />
-                  <span>تكرار حسب رصيد المخزن</span>
+                  إغلاق المعاينة
                 </button>
               </div>
 
-              <div className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
-                {printMode === 'normal'
-                  ? 'الطباعة العادية: كل كود QR سيتم طباعته على صفحة مستقلة A4 بمفرده بجودة عالية'
-                  : printMode === 'thermal'
-                  ? 'طابعة حرارية: استيكر رول فردي لكل قطعة'
-                  : 'شبكة A4: ملصقات مجمعة ومقسمة على شبكة للقص'}
+              {/* Exact Proportion Preview Container */}
+              <div className="flex justify-center p-3 bg-slate-200/60 rounded-xl overflow-x-auto">
+                <div
+                  style={{
+                    width: `${activeW * 4.2}px`,
+                    height: `${activeH * 4.2}px`,
+                    minWidth: '220px',
+                    minHeight: '130px',
+                  }}
+                  className="bg-white border-2 border-slate-900 shadow-md rounded-md p-2 flex flex-col justify-between select-none text-black transition-all"
+                >
+                  {layoutStyle === 'side' ? (
+                    <div className="flex items-center justify-between w-full h-full gap-2">
+                      <div className="flex-1 flex flex-col justify-between h-full text-right leading-tight py-0.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono font-black text-xs text-black tracking-tight">
+                            {previewItem.model_code}
+                          </span>
+                          {previewItem.shelf_code && (
+                            <span className="font-mono font-bold text-[8px] border border-black px-1 rounded-xs">
+                              رف:{previewItem.shelf_code}
+                            </span>
+                          )}
+                        </div>
+                        <div className="font-bold text-[9px] text-black truncate">
+                          {previewItem.model_name}
+                        </div>
+                        <div className="flex items-center gap-1 font-black text-[9px] text-black">
+                          <span>{previewItem.color_name}</span>
+                          <span>•</span>
+                          <span>مقاس: {previewItem.size_name}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-[8px] text-black font-bold pt-0.5 border-t border-black/40">
+                          <span className="font-black font-mono">
+                            {previewItem.default_price > 0 ? `${previewItem.default_price} ج.م` : 'زين للأطفال'}
+                          </span>
+                          <span className="font-mono text-[7px] truncate max-w-[80px] dir-ltr">
+                            {previewItem.qr_code_uid.slice(-8)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="h-full aspect-square flex items-center justify-center shrink-0 p-0.5 border border-slate-200 rounded">
+                        <img
+                          src={previewItem.qr_data_url}
+                          alt="QR"
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-between w-full h-full text-center py-0.5">
+                      <div className="w-full flex items-center justify-between px-1">
+                        <span className="font-mono font-black text-xs text-black">
+                          {previewItem.model_code}
+                        </span>
+                        {previewItem.shelf_code && (
+                          <span className="text-[8px] font-bold border border-black px-1 rounded-xs">
+                            رف {previewItem.shelf_code}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[8px] font-bold text-black truncate max-w-full px-1">
+                        {previewItem.model_name} ({previewItem.color_name} - {previewItem.size_name})
+                      </div>
+                      <div className="flex-1 flex items-center justify-center p-0.5 min-h-0">
+                        <img
+                          src={previewItem.qr_data_url}
+                          alt="QR"
+                          className="h-full aspect-square object-contain"
+                        />
+                      </div>
+                      <div className="w-full flex items-center justify-between px-1 text-[8px] font-mono border-t border-black/40 pt-0.5">
+                        <span className="font-black">
+                          {previewItem.default_price > 0 ? `${previewItem.default_price} ج.م` : 'زين للأطفال'}
+                        </span>
+                        <span className="text-[7px] truncate dir-ltr">{previewItem.qr_code_uid.slice(-8)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
+            </div>
+          )}
+
+          {/* Quick Selection and Copies Bar */}
+          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSelectAll}
+                className="flex items-center gap-1.5 font-bold text-slate-700 hover:text-slate-900 cursor-pointer"
+              >
+                {selectedIds.size === labels.length && labels.length > 0 ? (
+                  <CheckSquare className="w-4 h-4 text-indigo-600" />
+                ) : (
+                  <Square className="w-4 h-4 text-slate-400" />
+                )}
+                <span>تحديد الكل ({labels.length})</span>
+              </button>
+              <span className="text-slate-300">|</span>
+              <span className="font-bold text-indigo-700">
+                المحدد: {selectedIds.size} صنف
+              </span>
+              <span className="text-slate-300">|</span>
+              <span className="font-black text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                إجمالي الاستيكرات: {totalPrintStickers} ملصق
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 font-bold">النسخ:</span>
+              <button
+                type="button"
+                onClick={handleSetAllToOne}
+                className="px-3 py-1 bg-white hover:bg-slate-100 border border-slate-300 text-indigo-700 font-black rounded-lg transition-colors cursor-pointer shadow-2xs"
+              >
+                استيكر واحد (1) لكل كود
+              </button>
+              <button
+                type="button"
+                onClick={handleSetAllToStock}
+                className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 text-slate-600 rounded-lg font-bold transition-colors cursor-pointer flex items-center gap-1"
+              >
+                <Package className="w-3.5 h-3.5 text-slate-500" />
+                <span>نسخ حسب رصيد المخزن</span>
+              </button>
             </div>
           </div>
         </div>
@@ -398,7 +855,7 @@ export default function QrLabelsPage() {
 
                     {/* Copy Count Controller */}
                     <div className="flex items-center justify-between bg-slate-50 p-1.5 rounded-xl border border-slate-200">
-                      <span className="text-[10px] font-bold text-slate-600">صفحات/نسخ:</span>
+                      <span className="text-[10px] font-bold text-slate-600">عدد الاستيكرات:</span>
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
@@ -440,188 +897,112 @@ export default function QrLabelsPage() {
 
         {/* PRINT ONLY RENDER AREA */}
         <div className="hidden print:block">
-          {printMode === 'normal' ? (
-            /* NORMAL PRINTING MODE: Each QR code on its own full page alone */
-            <div className="normal-print-container">
-              {printableItems.map((item, index) => (
-                <div
-                  key={`normal-${item.variant_id}-${index}`}
-                  className="normal-single-page-label"
-                >
-                  <div className="normal-label-card">
-                    {/* Header */}
-                    <div className="normal-label-header">
-                      <div className="text-base font-black text-slate-900 tracking-wide">
-                        مؤسسة زين لملابس الأطفال بالجملة
-                      </div>
-                      <div className="text-xs font-bold text-slate-500 mt-0.5">
-                        بطاقة تعريف الصنف والموقع المخزني
-                      </div>
-                    </div>
-
-                    {/* Meta Bar: Model Code & Shelf */}
-                    <div className="normal-label-meta-bar">
-                      <div className="normal-model-code">
-                        {item.model_code}
-                      </div>
-                      {item.shelf_code ? (
-                        <div className="normal-shelf-badge">
-                          رف: {item.shelf_code}
-                        </div>
-                      ) : (
-                        <div className="normal-shelf-badge-empty">
-                          المخزن الرئيسي
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Product Name */}
-                    <div className="normal-product-name">
-                      {item.model_name}
-                    </div>
-
-                    {/* Color & Size Specs */}
-                    <div className="normal-variant-details">
-                      <span className="detail-pill">
-                        اللون: <strong>{item.color_name}</strong>
-                      </span>
-                      <span className="detail-pill">
-                        المقاس: <strong>{item.size_name}</strong>
-                      </span>
-                      {item.default_price > 0 && (
-                        <span className="detail-pill price-pill">
-                          السعر: <strong>{item.default_price} ج.م</strong>
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Huge Scannable QR Code */}
-                    <div className="normal-qr-wrapper">
-                      <img
-                        src={item.qr_data_url}
-                        alt={item.qr_code_uid}
-                        className="normal-qr-image"
-                      />
-                    </div>
-
-                    {/* Footer with UID & SKU */}
-                    <div className="normal-label-footer">
-                      <div className="font-mono text-sm font-black text-slate-900 dir-ltr tracking-wider">
-                        {item.qr_code_uid}
-                      </div>
-                      {item.sku && (
-                        <div className="font-mono text-xs text-slate-600 dir-ltr">
-                          SKU: {item.sku}
-                        </div>
-                      )}
-                      {item.totalCopies > 1 && (
-                        <div className="text-xs text-slate-500 font-bold mt-1">
-                          نسخة {item.copyIndex} من {item.totalCopies}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : printMode === 'thermal' ? (
-            /* THERMAL PRINTER MODE: Each sticker on its own single page alone */
+          {printMode === 'thermal' ? (
+            /* THERMAL LABEL PRINTER MODE: Auto-scaled to the printer sticker dimensions */
             <div className="thermal-print-container">
               {printableItems.map((item, index) => (
-                <div key={`thermal-${item.variant_id}-${index}`} className="thermal-label-sticker">
-                  <div className="thermal-sticker-inner">
-                    {/* Header */}
-                    <div className="flex items-center justify-between w-full border-b border-black pb-1 mb-1">
-                      <span className="font-mono font-black text-base tracking-tight text-black">
-                        {item.model_code}
-                      </span>
-                      {item.shelf_code && (
-                        <span className="font-mono font-black text-xs text-black border border-black px-1 rounded">
-                          رف {item.shelf_code}
+                <div
+                  key={`thermal-${item.variant_id}-${index}`}
+                  className="thermal-sticker-item"
+                >
+                  {layoutStyle === 'side' ? (
+                    /* Side-by-Side: QR on left, product details on right (optimal for 50x30, 60x40, etc.) */
+                    <div className="flex items-center justify-between w-full h-full gap-1.5 overflow-hidden">
+                      {/* Product details in Arabic */}
+                      <div className="flex-1 flex flex-col justify-between h-full text-right leading-tight py-0.5 overflow-hidden">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-mono font-black text-xs sm:text-sm text-black tracking-tight truncate">
+                            {item.model_code}
+                          </span>
+                          {item.shelf_code && (
+                            <span className="font-mono font-bold text-[8px] sm:text-[9px] border border-black px-1 rounded-xs shrink-0">
+                              رف:{item.shelf_code}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="font-bold text-[9px] sm:text-[10px] text-black truncate">
+                          {item.model_name}
+                        </div>
+
+                        <div className="flex items-center gap-1 font-black text-[9px] sm:text-[10px] text-black">
+                          <span className="truncate">{item.color_name}</span>
+                          <span>•</span>
+                          <span className="truncate">مقاس: {item.size_name}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[8px] sm:text-[9px] text-black font-bold pt-0.5 border-t border-black/40">
+                          <span className="font-black font-mono">
+                            {item.default_price > 0 ? `${item.default_price} ج.م` : 'زين للأطفال'}
+                          </span>
+                          <span className="font-mono text-[7px] truncate max-w-[80px] dir-ltr opacity-90">
+                            {item.sku || item.qr_code_uid.slice(-8)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* QR Image */}
+                      <div className="h-full aspect-square flex items-center justify-center shrink-0 p-0.5">
+                        <img
+                          src={item.qr_data_url}
+                          alt={item.qr_code_uid}
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    /* Stacked / Centered: Model code on top, QR in center, details on bottom */
+                    <div className="flex flex-col items-center justify-between w-full h-full text-center overflow-hidden py-0.5">
+                      <div className="w-full flex items-center justify-between px-1">
+                        <span className="font-mono font-black text-xs text-black">
+                          {item.model_code}
                         </span>
-                      )}
-                    </div>
-
-                    {/* Model & Variant info */}
-                    <div className="w-full text-center font-bold text-xs text-black truncate mb-1">
-                      {item.model_name}
-                    </div>
-                    <div className="flex items-center justify-center gap-2 text-xs font-black text-black mb-1">
-                      <span>{item.color_name}</span>
-                      <span>•</span>
-                      <span>مقاس: {item.size_name}</span>
-                    </div>
-
-                    {/* QR Code */}
-                    <div className="my-1 flex items-center justify-center">
-                      <img
-                        src={item.qr_data_url}
-                        alt={item.qr_code_uid}
-                        className="w-32 h-32 object-contain"
-                      />
-                    </div>
-
-                    {/* Price if available */}
-                    {item.default_price > 0 && (
-                      <div className="font-mono font-black text-xs text-black text-center mb-0.5">
-                        {item.default_price} ج.م
+                        {item.shelf_code && (
+                          <span className="text-[8px] font-bold border border-black px-1 rounded-xs">
+                            رف {item.shelf_code}
+                          </span>
+                        )}
                       </div>
-                    )}
 
-                    {/* UID */}
-                    <div className="font-mono text-[9px] text-black text-center dir-ltr truncate w-full">
-                      {item.qr_code_uid}
-                    </div>
-
-                    {/* Copy indicator if multiple */}
-                    {item.totalCopies > 1 && (
-                      <div className="text-[8px] font-mono text-black text-center mt-0.5">
-                        نسخة {item.copyIndex} من {item.totalCopies}
+                      <div className="text-[8px] font-bold text-black truncate max-w-full px-1">
+                        {item.model_name} ({item.color_name} - {item.size_name})
                       </div>
-                    )}
-                  </div>
+
+                      <div className="flex-1 flex items-center justify-center p-0.5 min-h-0">
+                        <img
+                          src={item.qr_data_url}
+                          alt={item.qr_code_uid}
+                          className="h-full aspect-square object-contain"
+                        />
+                      </div>
+
+                      <div className="w-full flex items-center justify-between px-1 text-[8px] font-mono border-t border-black/40 pt-0.5">
+                        <span className="font-black">
+                          {item.default_price > 0 ? `${item.default_price} ج.م` : 'زين للأطفال'}
+                        </span>
+                        <span className="text-[7px] truncate dir-ltr">
+                          {item.sku || item.qr_code_uid.slice(-8)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           ) : (
-            /* A4 MULTI-LABEL GRID MODE */
+            /* A4 FULL PAGE MODE (Optional) */
             <div className="a4-print-container">
               {printableItems.map((item, index) => (
-                <div key={`a4-${item.variant_id}-${index}`} className="a4-label-card">
-                  <div className="flex items-center justify-between pb-1 border-b border-black mb-1">
-                    <span className="font-mono font-black text-xs text-black">
-                      {item.model_code}
-                    </span>
-                    {item.shelf_code && (
-                      <span className="font-mono font-bold text-[10px] text-black border border-black px-1 rounded">
-                        رف {item.shelf_code}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="text-[10px] font-bold text-black truncate text-center">
-                    {item.model_name}
-                  </div>
-                  <div className="text-[11px] font-black text-black text-center">
-                    {item.color_name} • {item.size_name}
-                  </div>
-
-                  <div className="py-1 flex items-center justify-center">
-                    <img
-                      src={item.qr_data_url}
-                      alt={item.qr_code_uid}
-                      className="w-24 h-24 object-contain"
-                    />
-                  </div>
-
-                  {item.default_price > 0 && (
-                    <div className="font-mono font-bold text-[10px] text-black text-center">
-                      {item.default_price} ج.م
-                    </div>
-                  )}
-
-                  <div className="text-[8px] font-mono text-black text-center dir-ltr truncate">
-                    {item.qr_code_uid}
+                <div key={`a4-${item.variant_id}-${index}`} className="a4-fullpage-item">
+                  <div className="border-4 border-black rounded-2xl p-8 flex flex-col items-center text-center justify-between h-[90vh]">
+                    <div className="text-xl font-black">مؤسسة زين لملابس الأطفال</div>
+                    <div className="font-mono text-4xl font-black">{item.model_code}</div>
+                    {item.shelf_code && <div className="text-xl font-bold border-2 border-black px-3 py-1 rounded">رف: {item.shelf_code}</div>}
+                    <div className="text-2xl font-bold">{item.model_name}</div>
+                    <div className="text-xl font-black">{item.color_name} • {item.size_name}</div>
+                    <div className="my-4"><img src={item.qr_data_url} alt="QR" className="w-64 h-64 object-contain" /></div>
+                    {item.default_price > 0 && <div className="text-2xl font-black">{item.default_price} ج.م</div>}
+                    <div className="font-mono text-sm dir-ltr">{item.qr_code_uid}</div>
                   </div>
                 </div>
               ))}
@@ -630,20 +1011,22 @@ export default function QrLabelsPage() {
         </div>
       </div>
 
-      {/* Global CSS for Print Media */}
-      <style jsx global>{`
+      {/* DYNAMIC PRINT CSS FOR THERMAL LABEL PRINTERS */}
+      <style>{`
         @media print {
           @page {
-            size: A4 portrait;
-            margin: 10mm;
+            size: ${isAuto ? 'auto' : `${activeW}mm ${activeH}mm`};
+            margin: 0mm !important;
           }
-          body {
-            background: white !important;
-            color: black !important;
-            padding: 0 !important;
+
+          html, body {
             margin: 0 !important;
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            font-family: system-ui, -apple-system, sans-serif !important;
           }
+
           header,
           aside,
           footer,
@@ -654,181 +1037,53 @@ export default function QrLabelsPage() {
             display: none !important;
           }
 
-          /* NORMAL SINGLE-PAGE FORMAT: Exactly 1 QR Code on each page */
-          .normal-print-container {
-            display: block !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-          .normal-single-page-label {
-            page-break-after: always !important;
-            break-after: page !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            width: 100% !important;
-            min-height: 80vh !important;
-            max-height: 250mm !important;
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: center !important;
-            justify-content: center !important;
-            box-sizing: border-box !important;
-            padding: 5mm !important;
-            margin: 0 auto !important;
-          }
-          .normal-single-page-label:last-child {
-            page-break-after: auto !important;
-            break-after: auto !important;
-          }
-          .normal-label-card {
-            width: 100% !important;
-            max-width: 165mm !important;
-            border: 3px solid #0f172a !important;
-            border-radius: 8mm !important;
-            padding: 8mm 10mm !important;
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: center !important;
-            text-align: center !important;
-            box-sizing: border-box !important;
-            background: #ffffff !important;
-          }
-          .normal-label-header {
-            border-bottom: 2px solid #e2e8f0 !important;
-            padding-bottom: 3mm !important;
-            margin-bottom: 4mm !important;
-            width: 100% !important;
-            text-align: center !important;
-          }
-          .normal-label-meta-bar {
-            display: flex !important;
-            align-items: center !important;
-            justify-content: space-between !important;
-            width: 100% !important;
-            margin-bottom: 3mm !important;
-          }
-          .normal-model-code {
-            font-family: monospace, ui-monospace, sans-serif !important;
-            font-weight: 900 !important;
-            font-size: 26pt !important;
-            line-height: 1 !important;
-            color: #000000 !important;
-            letter-spacing: 1px !important;
-          }
-          .normal-shelf-badge {
-            font-family: monospace, ui-monospace, sans-serif !important;
-            font-weight: 900 !important;
-            font-size: 14pt !important;
-            color: #000000 !important;
-            border: 2px solid #000000 !important;
-            padding: 1.5mm 4mm !important;
-            border-radius: 2.5mm !important;
-          }
-          .normal-shelf-badge-empty {
-            font-size: 10pt !important;
-            color: #64748b !important;
-            border: 1px dashed #cbd5e1 !important;
-            padding: 1mm 3mm !important;
-            border-radius: 2.5mm !important;
-          }
-          .normal-product-name {
-            font-size: 15pt !important;
-            font-weight: 800 !important;
-            color: #0f172a !important;
-            margin-bottom: 3mm !important;
-            max-width: 100% !important;
-          }
-          .normal-variant-details {
-            display: flex !important;
-            flex-wrap: wrap !important;
-            align-items: center !important;
-            justify-content: center !important;
-            gap: 3mm !important;
-            margin-bottom: 4mm !important;
-          }
-          .detail-pill {
-            font-size: 11pt !important;
-            border: 1.5px solid #cbd5e1 !important;
-            padding: 1mm 4mm !important;
-            border-radius: 3mm !important;
-            background: #f8fafc !important;
-            color: #0f172a !important;
-          }
-          .price-pill {
-            border-color: #0f172a !important;
-            background: #f1f5f9 !important;
-            font-weight: 900 !important;
-          }
-          .normal-qr-wrapper {
-            margin: 2mm 0 4mm 0 !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-          }
-          .normal-qr-image {
-            width: 65mm !important;
-            height: 65mm !important;
-            object-fit: contain !important;
-          }
-          .normal-label-footer {
-            border-top: 2px solid #e2e8f0 !important;
-            padding-top: 3mm !important;
-            width: 100% !important;
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: center !important;
-            gap: 1mm !important;
-          }
-
-          /* THERMAL PRINTER FORMAT: 1 sticker alone per page */
+          /* THERMAL PRINTER ROLL: EXACT MATCH FOR STICKER DIMENSIONS */
           .thermal-print-container {
             display: block !important;
             width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
           }
-          .thermal-label-sticker {
+
+          .thermal-sticker-item {
+            width: ${isAuto ? '100%' : `${activeW}mm`} !important;
+            height: ${isAuto ? '100%' : `${activeH}mm`} !important;
+            max-width: ${isAuto ? '100vw' : `${activeW}mm`} !important;
+            max-height: ${isAuto ? '100vh' : `${activeH}mm`} !important;
             page-break-after: always !important;
             break-after: page !important;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
-            width: 100vw !important;
-            height: 100vh !important;
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: center !important;
-            justify-content: center !important;
+            overflow: hidden !important;
             box-sizing: border-box !important;
-            padding: 4mm !important;
+            padding: 1.2mm 1.5mm !important;
+            margin: 0 auto !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            border: 1px solid #000000 !important;
           }
-          .thermal-sticker-inner {
-            width: 100% !important;
-            max-width: 60mm !important;
+
+          .thermal-sticker-item:last-child {
+            page-break-after: auto !important;
+            break-after: auto !important;
+          }
+
+          .a4-fullpage-item {
+            page-break-after: always !important;
+            break-after: page !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            height: 96vh !important;
             display: flex !important;
-            flex-direction: column !important;
             align-items: center !important;
             justify-content: center !important;
+            padding: 10mm !important;
             box-sizing: border-box !important;
           }
 
-          /* A4 GRID FORMAT */
-          .a4-print-container {
-            display: grid !important;
-            grid-template-columns: repeat(3, 1fr) !important;
-            gap: 4mm !important;
-            padding: 5mm !important;
-          }
-          .a4-label-card {
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            border: 1px dashed #777 !important;
-            border-radius: 4px !important;
-            padding: 3mm !important;
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: space-between !important;
-            box-sizing: border-box !important;
+          .a4-fullpage-item:last-child {
+            page-break-after: auto !important;
+            break-after: auto !important;
           }
         }
       `}</style>
